@@ -1,2 +1,2 @@
 from .select import DataMatcher
-from .utils import load_fits_to_df
+from .utils import read_fits, write_fits

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 import argparse
 
-import galselect
+import pandas as pd
 
+import galselect
 
 parser = argparse.ArgumentParser()
 
@@ -50,8 +51,18 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # read the mock and data input catalogues
-    mock = galselect.utils.read_fits(args.mockpath)
-    data = galselect.utils.read_fits(args.datapath)
+    if args.datapath.endswith(".csv"):
+        data = pd.read_csv(args.datapath)
+    if args.datapath.endswith(".fits"):
+        data = galselect.read_fits(args.mockpath)
+    else:
+        raise ValueError(f"fileformat not supported: {args.mockpath}")
+    if args.mockpath.endswith(".csv"):
+        mock = pd.read_csv(args.mockpath)
+    if args.mockpath.endswith(".fits"):
+        mock = galselect.read_fits(args.mockpath)
+    else:
+        raise ValueError(f"fileformat not supported: {args.mockpath}")
 
     # unpack the redshift column name parameter
     z_name_data, z_name_mock = args.z_name
@@ -70,4 +81,4 @@ if __name__ == "__main__":
         args.idx_interval, args.distances)
 
     # write 
-    galselect.utils.write_fits(matched, args.matchpath)
+    galselect.write_fits(matched, args.matchpath)
