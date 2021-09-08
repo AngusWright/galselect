@@ -10,12 +10,22 @@ except ImportError:
     _FITSIO = False
 
 
-class FitsTable:
+def convert_byteorder(data):
+    dtype = data.dtype
+    # check if the byte order matches the native order, identified by the
+    # numpy dtype string representation: little endian = "<" and
+    # big endian = ">"
+    if dtype.str.startswith(("<", ">")):
+        if sys.byteorder == "little":
+            dtype = np.dtype("<" + dtype.base.str.strip("><"))
+        elif sys.byteorder == "big":
+            dtype = np.dtype(">" + dtype.base.str.strip("><"))
+    return data.astype(dtype, casting="equiv", copy=False)
+
+
+def read_fits(fpath, cols=None, hdu=1):
     """
-    Class to access a single table extension of FITS file, optionally selecting
-    a subset of table columns. Data is accessed via a context manager and is
-    read at once to memory. The preferred implementation uses fitsio.FITS, the
-    fallback implementation uses astropy.io.fits.
+    Read a FITS table into a pandas.DataFrame, ensuring the correct byte-order.
 
     Parameters:
     -----------
@@ -24,66 +34,91 @@ class FitsTable:
     hdu : int (optional)
         Index of the extension to read from the FITS file, defaults to 1.
     columns : list of str (optional)
-        Subset of columns to read from the table. All are read if not specified.
-    """
-
-    def __init__(self, fpath, hdu=1, columns=None):
-        self.fpath = fpath
-        self.hdu = hdu
-        self.cols = columns
-
-    def __enter__(self):
-        """
-        Returns:
-        --------
-        data : array_like
-            Data from the specified file, hdu and optional column selection
-            applied.
-        """
-        if _FITSIO:
-            self.fits = fitsio.FITS(self.fpath)
-            if self.cols is None:
-                data = self.fits[self.hdu]
-            else:
-                data = self.fits[self.hdu][self.cols][:]
-        else:
-            self.fits = astropy.io.fits.open(self.fpath)
-            if self.cols is None:
-                data = self.fits[self.hdu]
-            else:
-                data = self.fits[self.hdu][self.cols]
-        return data
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if _FITSIO:
-            self.fits.close()
-
-
-def load_fits_to_df(fpath, cols=None, hdu=1):
-    """
-    Convert a FITS table to a pandas.DataFrame instance, ensuring the correct
-    byte-ordering.
-
-    Parameters:
-    -----------
-    fpath : str
-        Path to the FITS file.
-    hdu : int (optional)
-        Index of the extension to read from the FITS file, defaults to 1.
-    columns : list of str (optional)
-        Subset of columns to read from the table. All are read if not specified.
+        Subset of columns to read from the table, defaults to all.
     
     Returns:
         df : pandas.DataFrame
             Table data converted to a DataFrame instance.
     """
-    with FitsTable(fpath, hdu, cols) as data:
-        df = pd.DataFrame()
-        for colname, (dtype, offset) in data.dtype.fields.items():
-            if dtype.str.startswith(("<", ">")):
-                if sys.byteorder == "little":
-                    dtype = np.dtype("<" + dtype.base.str.strip("><"))
-                elif sys.byteorder == "big":
-                    dtype = np.dtype(">" + dtype.base.str.strip("><"))
-            df[colname] = data[colname].astype(dtype)
+    # load the FITS data
+    if _FITSIO:
+        fits = fitsio.FITS(fpath)
+        if cols is None:
+            data = fits[hdu]
+        else:
+            data = fits[hdu][cols][:]
+        fits.close()
+    else:
+        with astropy.io.fits.open(fpath) as fits:
+            if cols is None:
+                data = fits[hdu]
+            else:
+                data = fits[hdu][cols]
+    # construct the data frame
+    df = pd.DataFrame()
+    for colname, (dtype, offset) in data.dtype.fields.items():
+        df[colname] = convert_byteorder(data[colname])
     return df
+
+
+def read_fits(fpath, cols=None, hdu=1):
+    """
+    Read a FITS table into a pandas.DataFrame, ensuring the correct byte-order.
+
+    Parameters:
+    -----------
+    fpath : str
+        Path to the FITS file.
+    hdu : int (optional)
+        Index of the extension to read from the FITS file, defaults to 1.
+    columns : list of str (optional)
+        Subset of columns to read from the table, defaults to all.
+    
+    Returns:
+        df : pandas.DataFrame
+            Table data converted to a DataFrame instance.
+    """
+    # load the FITS data
+    if _FITSIO:
+        fits = fitsio.FITS(fpath)
+        if cols is None:
+            data = fits[hdu]
+        else:
+            data = fits[hdu][cols][:]
+        fits.close()
+    else:
+        with astropy.io.fits.open(fpath) as fits:
+            if cols is None:
+                data = fits[hdu]
+            else:
+                data = fits[hdu][cols]
+    # construct the data frame
+    df = pd.DataFrame()
+    for colname, (dtype, offset) in data.dtype.fields.items():
+        df[colname] = convert_byteorder(data[colname])
+    return df
+
+
+def write_fits(data, fpath):
+    """
+    Write a pandas.DataFrame as FITS table file.
+
+    Parameters:
+    -----------
+    data : pandas.DataFrame
+        Data to write as FITS table.
+    fpath : str
+        Path to the FITS file.
+    """
+    # load the FITS data
+    if _FITSIO:
+        array = np.empty(len(data), dtype=np.dtype(list(data.dtypes.items())))
+        fits = fitsio.FITS(fpath, "rw")
+        fits.write(array)
+        fits.close()
+    else:
+        columns = [
+            astropy.io.fits.Column(name=col, array=data[col])
+            for col in data.columns]
+        hdu = astropy.io.fits.BinTableHDU.from_columns(columns)
+        hdu.writeto(fpath)

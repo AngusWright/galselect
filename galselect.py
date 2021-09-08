@@ -4,10 +4,6 @@ import argparse
 import galselect
 
 
-def write_cataloge(fpath, data):
-    pass
-
-
 parser = argparse.ArgumentParser()
 
 data = parser.add_argument_group(
@@ -54,8 +50,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # read the mock and data input catalogues
-    mock = galselect.utils.load_fits_to_df(args.mockpath)
-    data = galselect.utils.load_fits_to_df(args.datapath)
+    mock = galselect.utils.read_fits(args.mockpath)
+    data = galselect.utils.read_fits(args.datapath)
 
     # unpack the redshift column name parameter
     z_name_data, z_name_mock = args.z_name
@@ -74,4 +70,4 @@ if __name__ == "__main__":
         args.idx_interval, args.distances)
 
     # write 
-    write_cataloge(args.matchpath, matched)
+    galselect.utils.write_fits(matched, args.matchpath)
