@@ -44,7 +44,7 @@ def read_fits(fpath, cols=None, hdu=1):
     if _FITSIO:
         fits = fitsio.FITS(fpath)
         if cols is None:
-            data = fits[hdu]
+            data = fits[hdu][:]
         else:
             data = fits[hdu][cols][:]
         fits.close()
@@ -55,9 +55,9 @@ def read_fits(fpath, cols=None, hdu=1):
             else:
                 data = fits[hdu][cols]
     # construct the data frame
-    df = pd.DataFrame()
-    for colname, (dtype, offset) in data.dtype.fields.items():
-        df[colname] = convert_byteorder(data[colname])
+    df = pd.DataFrame(data={
+        colname: convert_byteorder(data[colname])
+        for colname, (dtype, offset) in data.dtype.fields.items()})
     return df
 
 
