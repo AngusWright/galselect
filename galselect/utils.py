@@ -75,6 +75,8 @@ def write_fits(data, fpath):
     # load the FITS data
     if _FITSIO:
         array = np.empty(len(data), dtype=np.dtype(list(data.dtypes.items())))
+        for column in data.columns:
+            array[column] = data[column]
         fits = fitsio.FITS(fpath, "rw")
         fits.write(array)
         fits.close()
