@@ -269,7 +269,7 @@ class DataMatcher:
         try:
             if progress:
                 pbar = tqdm.tqdm(total=len(redshifts))
-                step = 10
+                step = 100
             for i, (redshift, entry) in enumerate(zip(redshifts, features)):
                 idx, meta = self.single_match(
                     redshift, entry, d_idx, return_mock_distance)
