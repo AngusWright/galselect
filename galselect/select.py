@@ -2,6 +2,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+import tqdm
 
 
 class DataMatcher:
@@ -126,7 +127,7 @@ class DataMatcher:
         # around the target redshift
         idx = np.searchsorted(self.z_sorted, redshift)
         idx_lo = np.maximum(idx - d_idx, 0)
-        idx_hi = np.minimum(idx + d_idx, len(self.z_sorted))
+        idx_hi = np.minimum(idx + d_idx, len(self.z_sorted) - 1)
         # map the selected indices back to the order in the mock data table
         idx_mock = self.z_sort_idx[idx_lo:idx_hi+1]
         dz = self.z_sorted[idx_hi] - self.z_sorted[idx_lo]
@@ -223,7 +224,8 @@ class DataMatcher:
         return match_idx, meta
 
     def match_catalog(
-            self, redshifts, features, d_idx=10000, return_mock_distance=False):
+            self, redshifts, features, d_idx=10000, return_mock_distance=False,
+            progress=False):
         """
         Create data catalouge by matching a data catalogue in the feature space
         to the mock data with in a neighbourhood of similar redshifts. Matches
@@ -244,6 +246,8 @@ class DataMatcher:
         return_mock_distance : bool
             Additionally calculate the distance of the match to the next point
             in the mock data in feature space.
+        progress : bool
+            Show a progressbar for the matching operation
 
         Returns:
         --------
@@ -262,14 +266,23 @@ class DataMatcher:
         if return_mock_distance:
             match_stats["dist_mock"] = np.empty_like(redshifts, dtype=np.float)
         # iterate the input catalogue and collect the match index and statistics
-        for i, (redshift, entry) in enumerate(zip(redshifts, features)):
-            idx, meta = self.single_match(
-                redshift, entry, d_idx, return_mock_distance)
-            idx_match[i] = idx
-            for key, val in meta.items():
-                match_stats[key][i] = val
+        try:
+            if progress:
+                pbar = tqdm.tqdm(total=len(redshifts))
+                step = 10
+            for i, (redshift, entry) in enumerate(zip(redshifts, features)):
+                idx, meta = self.single_match(
+                    redshift, entry, d_idx, return_mock_distance)
+                idx_match[i] = idx
+                for key, val in meta.items():
+                    match_stats[key][i] = val
+                if i % step == 0 and progress:
+                    pbar.update(step)
+        finally:
+            if progress:
+                pbar.close()
         # construct the matched output catalogue
-        catalogue = self.data[idx_match]
+        catalogue = self.data.iloc[idx_match].copy(deep=True)
         for colname, values in match_stats.items():
             catalogue[colname] = values
         return catalogue
