@@ -224,8 +224,8 @@ class DataMatcher:
         return match_idx, meta
 
     def match_catalog(
-            self, redshifts, features, d_idx=10000, return_mock_distance=False,
-            progress=False):
+            self, redshifts, features, d_idx=10000, clonecols=None,
+            return_mock_distance=False, progress=False):
         """
         Create data catalouge by matching a data catalogue in the feature space
         to the mock data with in a neighbourhood of similar redshifts. Matches
@@ -243,6 +243,9 @@ class DataMatcher:
         d_idx : int
             Size of the redshift neighbourhood, total number of mock objects
             that are considered for the feature space matching.
+        clonecols : pandas.DataFrame
+            Additional columns from the data catalogue that will be copied to
+            the simulation
         return_mock_distance : bool
             Additionally calculate the distance of the match to the next point
             in the mock data in feature space.
@@ -285,4 +288,8 @@ class DataMatcher:
         catalogue = self.data.iloc[idx_match].copy(deep=True)
         for colname, values in match_stats.items():
             catalogue[colname] = values
+        if clonecols is not None:
+            for col in clonecols.columns:
+                catalogue[col] = clonecols[col].to_numpy()
+            print(catalogue[clonecols.columns])
         return catalogue

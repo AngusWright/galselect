@@ -46,6 +46,9 @@ features.add_argument(
 data = parser.add_argument_group(
     "Configuration", description="Optional parameters")
 data.add_argument(
+    "--clone", nargs="*",
+    help="columns to clone from the data into the matched mock data")
+data.add_argument(
     "--z-warn", metavar="float", type=float, default=0.05,
     help="issue a warning if the redshift difference of a match exceeds this "
          "threshold (default: %(default)s")
@@ -94,7 +97,8 @@ if __name__ == "__main__":
             f" redshift range of {selector.z_min:.3f} to {selector.z_max:.3f}")
     matched = selector.match_catalog(
         data[z_name_data], data[[f for f in feature_names_data]].to_numpy(),
-        args.idx_interval, args.distances, progress=args.progress)
+        d_idx=args.idx_interval, clonecols=data[args.clone],
+        return_mock_distance=args.distances, progress=args.progress)
 
     # write 
     galselect.write_fits(matched, args.output)
