@@ -291,5 +291,4 @@ class DataMatcher:
         if clonecols is not None:
             for col in clonecols.columns:
                 catalogue[col] = clonecols[col].to_numpy()
-            print(catalogue[clonecols.columns])
         return catalogue
