@@ -1,20 +1,10 @@
 #!/usr/bin/env python3
 import argparse
 
+import astropandas as apd
 import numpy as np
-import pandas as pd
 
 import galselect
-
-
-def load_input(fpath):
-    if fpath.endswith(".csv"):
-        data = pd.read_csv(fpath)
-    if fpath.endswith(".fits"):
-        data = galselect.read_fits(fpath)
-    else:
-        raise ValueError(f"fileformat not supported: {fpath}")
-    return data
 
 
 parser = argparse.ArgumentParser()
@@ -42,6 +32,13 @@ features.add_argument(
     "-f", "--feature", **_map_kwargs, action="append", required=True,
     help="name of a feature column in data and mock catalogues, repeat "
          "argument for every feature required for the matching")
+features.add_argument(
+    "--norm", action="store_true",
+    help="normalise the feature space (centered on zero, scaled by 1/stdev)")
+features.add_argument(
+    "--weights", nargs="*", type=float,
+    help="rescale the feature data (after normalising), must be one weight "
+         "per --feature if provided")
 
 data = parser.add_argument_group(
     "Configuration", description="Optional parameters")
@@ -67,10 +64,16 @@ data.add_argument(
 
 if __name__ == "__main__":
     args = parser.parse_args()
+    # check the weights argument
+    if args.weights is not None:
+        if len(args.weights) != len(args.feature):
+            parser.error(
+                f"number of --feature dimensions ({len(args.feature)}) and "
+                f"--weights ({len(args.weights)}) do not match")
 
     # read the mock and data input catalogues
-    data = load_input(args.data)
-    mock = load_input(args.mock)
+    data = apd.read_fits(args.data)
+    mock = apd.read_fits(args.mock)
 
     # unpack the redshift column name parameter
     z_name_data, z_name_mock = args.z_name
@@ -84,6 +87,7 @@ if __name__ == "__main__":
     # match the catalogues
     selector = galselect.DataMatcher(
         mock, z_name_mock, [f for f in feature_names_mock],
+        normalise=args.norm, weights=args.weights,
         redshift_warning=args.z_warn)
     # mask to redshift range
     mask = (
@@ -100,5 +104,5 @@ if __name__ == "__main__":
         d_idx=args.idx_interval, clonecols=data[args.clone],
         return_mock_distance=args.distances, progress=args.progress)
 
-    # write 
-    galselect.write_fits(matched, args.output)
+    # write
+    apd.to_fits(matched, args.output)

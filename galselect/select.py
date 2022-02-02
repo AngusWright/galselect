@@ -33,12 +33,19 @@ class DataMatcher:
     """
     
     def __init__(
-            self, data, redshift_name, feature_names,
-            initial_mask=None, redshift_warning=0.05):
+            self, data, redshift_name, feature_names, normalise=False,
+            weights=None, initial_mask=None, redshift_warning=0.05):
         if type(data) is not pd.DataFrame:
             raise TypeError(f"input data must be of type {type(pd.DataFrame)}")
         self.data = data
         self.z_warn = redshift_warning
+        self.normalise = normalise
+        self.weights = weights
+        if self.weights is not None:
+            if len(weights) != len(feature_names):
+                raise ValueError(
+                    "number of weights does not match the feature space "
+                    "dimension")
 
         self._init_available_mask(initial_mask)
         self._init_feature_space(feature_names)
@@ -95,9 +102,15 @@ class DataMatcher:
         for name in feature_names:
             if name not in self.data:
                 raise KeyError(f"feature column '{name}' not found")
+        self.feature_dim = len(feature_names)
         self.feature_space = np.column_stack([
             self.data[name] for name in feature_names])
-        self.feature_dim = len(feature_names)
+        if self.normalise:
+            self.feature_space -= self.feature_space.mean(axis=0)
+            self.feature_space /= self.feature_space.std(axis=0)
+        if self.weights is not None:
+            for i, w in enumerate(self.weights):
+                self.feature_space[:, i] *= w
 
     def close_redshifts(self, redshift, d_idx):
         """
@@ -160,6 +173,8 @@ class DataMatcher:
         guaranteed to be a different mock data entry. The method my fail if the
         redshift is outside the redshift range of the mock data or all mock
         objects are exhausted in the redshift neighbourhood.
+        Note: No noramlisation is applied ot the data feature space, use the
+        match_catalog method instead. Weights are applied.
 
         Parameters:
         -----------
@@ -189,6 +204,8 @@ class DataMatcher:
         if features.shape != (dim,):
             raise ValueError(
                 f"dimensions of data features do not match (expected {dim})")
+        if self.weights is not None:
+            features *= self.weights
         # select the nearest objects in the mock data and its features used for
         # matching to the data
         neighbourhood_idx, z_range = self.close_redshifts(redshift, d_idx)
@@ -262,6 +279,9 @@ class DataMatcher:
             (dist_data), and, if return_mock_distance is given, the distance of
             the match to the next point in the mock feature space (dist_mock).
         """
+        if self.normalise:
+            features -= features.mean(axis=0)
+            features /= features.std(axis=0)
         idx_match = np.empty_like(redshifts, dtype=np.int)
         match_stats = {
             "n_neigh": np.empty_like(redshifts, dtype=np.int),
