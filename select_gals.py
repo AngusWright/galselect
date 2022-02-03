@@ -44,11 +44,12 @@ data = parser.add_argument_group(
     "Configuration", description="Optional parameters")
 data.add_argument(
     "--clone", nargs="*",
-    help="columns to clone from the data into the matched mock data")
+    help="columns to clone from the data into the matched mock data (data "
+         "redshift is always cloned)")
 data.add_argument(
-    "--z-warn", metavar="float", type=float, default=0.05,
+    "--z-warn", metavar="float", type=float,
     help="issue a warning if the redshift difference of a match exceeds this "
-         "threshold (default: %(default)s")
+         "threshold (default: no warning")
 data.add_argument(
     "--idx-interval", metavar="int", type=int, default=10000,
     help="number of nearest neighbours in redshift used to find a match "
@@ -64,6 +65,8 @@ data.add_argument(
 
 if __name__ == "__main__":
     args = parser.parse_args()
+    if args.z_warn is None:
+        args.z_warn = 1e9  # arbitrary large value to supress warnings
     # check the weights argument
     if args.weights is not None:
         if len(args.weights) != len(args.feature):
@@ -72,7 +75,9 @@ if __name__ == "__main__":
                 f"--weights ({len(args.weights)}) do not match")
 
     # read the mock and data input catalogues
+    print(f"reading data file: {args.data}")
     data = apd.read_fits(args.data)
+    print(f"reading simulation file: {args.mock}")
     mock = apd.read_fits(args.mock)
 
     # unpack the redshift column name parameter
@@ -99,10 +104,13 @@ if __name__ == "__main__":
         print(
             f"WARNING: removed {nbad}/{len(mask)} data objects outside the mock"
             f" redshift range of {selector.z_min:.3f} to {selector.z_max:.3f}")
+    if z_name_data not in args.clone:
+        args.clone.append(z_name_data)
     matched = selector.match_catalog(
         data[z_name_data], data[[f for f in feature_names_data]].to_numpy(),
         d_idx=args.idx_interval, clonecols=data[args.clone],
         return_mock_distance=args.distances, progress=args.progress)
 
     # write
+    print(f"writing matched data: {args.output}")
     apd.to_fits(matched, args.output)
