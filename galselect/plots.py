@@ -110,7 +110,7 @@ class Plotter:
         sns.despine()
         self.add_fig(g.figure)
 
-    def redshift_redshift(self, zmock, zdata):
+    def redshift_redshift(self, zdata, zmock):
         log = [False, False]
         xlabel = "Redshift data"
         ylabel = "Redshift mock"
