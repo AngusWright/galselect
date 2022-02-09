@@ -1,5 +1,7 @@
+from re import S
 import warnings
 
+import astropandas as apd
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -58,10 +60,40 @@ def stats_along_xaxis(ax, df, xlabel, ylabel, bins=NBINS//2, xlog=False):
     ax.fill_between(centers, ylow, yhigh, **cifill_kws)
 
 
-class Plotter:
+def make_figure(nrows, ncols, size=2.5):
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(0.5 + size*ncols, 0.5 + size*ncols),
+        sharex=False, sharey=False)
+    for i, ax in enumerate(axes.flatten()):
+        for pos in ["top", "right"]:
+            ax.spines[pos].set_visible(False)
+        ax.grid(alpha=0.33)
+    return fig, axes
+
+
+class BasePlotter:
+
+    def __init__(self, fpath):
+        self.fpath = fpath
+
+    def __enter__(self, *args, **kwargs):
+        self._backend = PdfPages(self.fpath)
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        self._backend.close()
+
+    def add_fig(self, fig):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            fig.tight_layout()
+        self._backend.savefig(fig)
+
+
+class Plotter(BasePlotter):
 
     def __init__(self, fpath, mock):
-        self.fpath = fpath
+        super().__init__(fpath)
         self.mock = mock
 
     @staticmethod
@@ -83,19 +115,6 @@ class Plotter:
             ax.axvline(value, **refline_kws)
         elif which == "hor":
             ax.axhline(value, **refline_kws)
-
-    def __enter__(self, *args, **kwargs):
-        self._backend = PdfPages(self.fpath)
-        return self
-
-    def __exit__(self, *args, **kwargs):
-        self._backend.close()
-
-    def add_fig(self, fig):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            fig.tight_layout()
-        self._backend.savefig(fig)
 
     def redshifts(self, zmock, zdata):
         log = False
@@ -205,3 +224,49 @@ class Plotter:
             get_ax(g), df, xlabel, ylabel, xlog=log[0],
             bins=make_equal_n(df[xlabel].to_numpy(), NBINS//2, np.int_))
         self.add_fig(g.figure)
+
+
+class Catalogue:
+
+    def __init__(self, fpath, specname, photname, *features, fields=None):
+        print(f"reading catalogue: {fpath}")
+        self._data = apd.read_fits(fpath)
+        self.z_spec = self._data[specname]
+        self.z_phot = self._data[photname]
+        if fields is None:
+            self.fields = None
+        else:
+            self.fields = self._data[fields]
+        self.features = []
+        for name in features:
+            self.features.append(None if name is None else self._data[fields])
+
+
+class RedshiftStats(BasePlotter):
+
+    def __init__(self, fpath):
+        super().__init__(fpath)
+        self._cats = []
+        self.n_feat = None
+
+    def add_catalogue(self, fpath, specname, photname, *features, fields=None):
+        if self.n_feat is None:
+            self.n_feat = len(features)
+        else:
+            assert(len(features) == self.n_feat)
+        self._cats.append(Catalogue(
+            fpath, specname, photname, *features, fields))
+
+    def plot(self, labels, outlier_threshold=0.15):
+        assert(len(labels) == self.n_feat)
+        fig, axes = make_figure(3, 2 + self.n_feat, size=2.5)
+        # iterate through catalogues
+        for cat in self._cats:
+            dz = (cat.z_phot - cat.z_spec) / (1.0 + cat.z_spec)
+            bin_data_sets = [cat.z_spec, cat.z_phot, *cat.features]
+            for i, bin_data in enumerate(bin_data_sets):
+                # row 1: photo-z scatter (nMAD)
+                # row 2: photo-z bias
+                # row 3: outlier fraction (dz > outlier_threshold)
+                # row 4: binning data distribution
+                pass
