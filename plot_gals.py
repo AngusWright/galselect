@@ -30,9 +30,8 @@ if __name__ == "__main__":
         args.output = os.path.splitext(args.match)[0] + ".pdf"
     print(f"plotting to: {args.output}")
     with galselect.Plotter(args.output, match) as plt:
-        plt.redshifts(*args.z_name)
+        plt.redshift_redshift(*args.z_name)
         plt.distances()
         plt.distance_neighbours()
-        plt.distance_redshift(args.z_name[0])
+        plt.distance_redshift(args.z_name[1])
         plt.delta_redshift_neighbours(*args.z_name)
-        plt.delta_redshift(*args.z_name)
