@@ -310,5 +310,9 @@ class DataMatcher:
             catalogue[colname] = values
         if clonecols is not None:
             for col in clonecols.columns:
-                catalogue[col] = clonecols[col].to_numpy()
+                if col in catalogue:
+                    colname = f"{col}_data"
+                else:
+                    colname = col
+                catalogue[colname] = clonecols[col].to_numpy()
         return catalogue

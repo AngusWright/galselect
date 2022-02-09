@@ -35,8 +35,8 @@ def make_bins(data, nbins=NBINS, log=False):
 def make_equal_n(data, nbins=NBINS):
     qc = pd.qcut(data, q=nbins, precision=6)
     edges = np.append(qc.categories.left, qc.categories.right[-1])
-    index = qc.codes
-    return edges, index
+    edges = np.unique(edges)
+    return edges
 
 
 def stats_along_xaxis(ax, df, xlabel, ylabel, bins=NBINS//2, xlog=False):

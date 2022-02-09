@@ -105,7 +105,10 @@ if __name__ == "__main__":
             f"WARNING: removed {nbad}/{len(mask)} data objects outside the mock"
             f" redshift range of {selector.z_min:.3f} to {selector.z_max:.3f}")
     if z_name_data not in args.clone:
-        args.clone.append(z_name_data)
+        if z_name_data == z_name_mock:
+            args.clone.append(f"{z_name_data}_data")
+        else:
+            args.clone.append(z_name_data)
     matched = selector.match_catalog(
         data[z_name_data], data[[f for f in feature_names_data]].to_numpy(),
         d_idx=args.idx_interval, clonecols=data[args.clone],
