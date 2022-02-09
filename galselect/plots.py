@@ -32,10 +32,10 @@ def make_bins(data, nbins=NBINS, log=False):
         return np.linspace(low, high, nbins)
 
 
-def make_equal_n(data, nbins=NBINS):
-    qc = pd.qcut(data, q=nbins, precision=6)
+def make_equal_n(data, nbins=NBINS, dtype=np.float64):
+    qc = pd.qcut(data, q=nbins, precision=6, duplicates="drop")
     edges = np.append(qc.categories.left, qc.categories.right[-1])
-    edges = np.unique(edges)
+    edges = np.unique(edges.astype(dtype))
     return edges
 
 
@@ -182,7 +182,7 @@ class Plotter:
             **marginal_kws)
         stats_along_xaxis(
             get_ax(g), df, xlabel, ylabel, xlog=log[0],
-            bins=make_equal_n(df[xlabel].to_numpy(), NBINS//2)[0])
+            bins=make_equal_n(df[xlabel].to_numpy(), NBINS//2, np.int_))
         self.add_fig(g.figure)
 
     def delta_redshift_neighbours(self, zmock, zdata):
@@ -203,5 +203,5 @@ class Plotter:
         self.add_refline(get_ax(g), which="y", value=0.0)
         stats_along_xaxis(
             get_ax(g), df, xlabel, ylabel, xlog=log[0],
-            bins=make_equal_n(df[xlabel].to_numpy(), NBINS//2)[0])
+            bins=make_equal_n(df[xlabel].to_numpy(), NBINS//2, np.int_))
         self.add_fig(g.figure)
