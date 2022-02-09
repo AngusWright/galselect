@@ -32,5 +32,7 @@ if __name__ == "__main__":
     with galselect.Plotter(args.output, match) as plt:
         plt.redshifts(*args.z_name)
         plt.distances()
+        plt.distance_neighbours()
         plt.distance_redshift(args.z_name[0])
+        plt.delta_redshift_neighbours(*args.z_name)
         plt.delta_redshift(*args.z_name)

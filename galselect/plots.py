@@ -7,8 +7,30 @@ from matplotlib.backends.backend_pdf import PdfPages
 import seaborn as sns
 
 
-marginal_kws=dict(bins=30, element="step")
-joint_kws=dict(bins=30)
+NBINS = 30
+marginal_kws = dict(bins=NBINS, element="step")
+joint_kws = dict(bins=NBINS)
+
+
+
+def stats_along_xaxis(ax, df, xlabel, ylabel, nbins=NBINS):
+    def qlow(x):
+        return x.quantile(0.1587)
+
+    def qhigh(x):
+        return x.quantile(0.8413)
+
+    if np.isscalar(nbins):
+        bins = np.histogram_bin_edges(df[xlabel], nbins)
+    centers = (bins[1:] + bins[:-1]) / 2.0
+    stats = df.groupby(pd.cut(df[xlabel], bins)).agg([
+        np.median, qlow, qhigh])
+    y = stats[ylabel]["median"].to_numpy()
+    ylow = y - stats[ylabel]["qlow"].to_numpy()
+    yhigh = y + stats[ylabel]["qhigh"].to_numpy()
+    ax.plot(centers, y, color="k", lw=0.7)
+    ax.plot(centers, ylow, color="k", ls="--", lw=0.7)
+    ax.plot(centers, yhigh, color="k", ls="--", lw=0.7)
 
 
 class Plotter:
@@ -72,6 +94,7 @@ class Plotter:
             cbar=True, cbar_ax=cax, **joint_kws)
         g.plot_marginals(
             sns.histplot, log_scale=False, **marginal_kws)
+        stats_along_xaxis(g.figure.axes[0], df, xlabel, ylabel)
         self.add_fig(g.figure)
 
     def delta_redshift(self, zmock, zdata):
@@ -86,4 +109,37 @@ class Plotter:
             sns.histplot, log_scale=False, cbar=True, cbar_ax=cax, **joint_kws)
         g.plot_marginals(
             sns.histplot, log_scale=False, **marginal_kws)
+        stats_along_xaxis(g.figure.axes[0], df, xlabel, ylabel)
+        self.add_fig(g.figure)
+
+    def distance_neighbours(self):
+        xlabel = "Number of available neighbours"
+        ylabel = "Match distance"
+        df = pd.DataFrame({
+            xlabel: self.mock["n_neigh"],
+            ylabel: self.mock["dist_data"]})
+        g = sns.JointGrid(data=df, x=xlabel, y=ylabel, marginal_ticks=True)
+        cax = self.make_cbar_ax(g.figure)
+        g.plot_joint(
+            sns.histplot, log_scale=[True, True],
+            cbar=True, cbar_ax=cax, **joint_kws)
+        g.plot_marginals(
+            sns.histplot, log_scale=False, **marginal_kws)
+        #stats_along_xaxis(g.figure.axes[0], df, xlabel, ylabel)
+        self.add_fig(g.figure)
+
+    def delta_redshift_neighbours(self, zmock, zdata):
+        xlabel = "Number of available neighbours"
+        ylabel = r"$z_\mathrm{mock} - z_\mathrm{data}$"
+        df = pd.DataFrame({
+            xlabel: self.mock["n_neigh"],
+            ylabel: self.mock[zmock] - self.mock[zdata]})
+        g = sns.JointGrid(data=df, x=xlabel, y=ylabel, marginal_ticks=True)
+        cax = self.make_cbar_ax(g.figure)
+        g.plot_joint(
+            sns.histplot, log_scale=[True, False], cbar=True,
+            cbar_ax=cax, **joint_kws)
+        g.plot_marginals(
+            sns.histplot, log_scale=False, **marginal_kws)
+        #stats_along_xaxis(g.figure.axes[0], df, xlabel, ylabel)
         self.add_fig(g.figure)
