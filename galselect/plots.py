@@ -1,5 +1,8 @@
+import enum
 from re import S
 import warnings
+
+from pyrsistent import field
 
 import astropandas as apd
 import numpy as np
@@ -104,6 +107,8 @@ class BasePlotter:
             ax.axvline(value, **refline_kws)
         elif which == "hor":
             ax.axhline(value, **refline_kws)
+        else:
+            raise ValueError(f"invalid mode (which): {which}")
 
 
 class Plotter(BasePlotter):
@@ -237,7 +242,7 @@ class Catalogue:
         self.z_spec = self._data[specname]
         self.z_phot = self._data[photname]
         if fields is None:
-            self.fields = None
+            self.fields = np.zeros(len(self._data))
         else:
             self.fields = self._data[fields]
         self.features = []
@@ -274,9 +279,12 @@ class RedshiftStats(BasePlotter):
         labels = [r"$z_\mathsf{spec}$", r"$z_\mathsf{phot}$", *labels]
         # collect the data
         dfs = []
+        fieldnames = []
         for cat in self._cats:
+            fieldnames.append(cat.name)
             df = pd.DataFrame({
                 "data set": cat.name,
+                "fields": 0 if cat.fields is None else cat.fields,
                 labels[0]: cat.z_spec,
                 labels[1]: cat.z_phot})
             for i, feat in enumerate(cat.features, 2):
@@ -286,37 +294,49 @@ class RedshiftStats(BasePlotter):
         data = pd.concat(dfs).reset_index()
         bins = {l: self.make_bins(data[l], nbins=30) for l in labels}
         # plot the data
+        stat_labels = [
+            r"$\sigma_\mathsf{mad}$",
+            r"$\mu_{\delta z}$",
+            rf"$\xi_{{{outlier_threshold}}}$"]
         fig, axes = make_figure(4, len(labels), size=4)
         for i, label in enumerate(labels):
-            stats = data.groupby(["data set", pd.cut(data[label], bins[label])]).agg(
-                x=(label, np.median),
-                mad=("dz", scipy.stats.median_absolute_deviation),
-                median=("dz", np.median),
-                frac=("dz", outlier_frac))
-            stat_labels = [
-                r"$\sigma_\mathsf{mad}$",
-                r"$\mu_{\delta z}$",
-                rf"$\xi_{{{outlier_threshold}}}$"]
-            stats.rename(
-                columns={
+            for n, cat in enumerate(self._cats):
+                name = cat.name
+                mask = data["data set"] == name
+                grouper = data[mask].groupby([
+                    pd.cut(data[label][mask], bins[label]),
+                    "fields"])
+                stats = grouper.agg(
+                    x=(label, np.median),
+                    mad=("dz", scipy.stats.median_absolute_deviation),
+                    median=("dz", np.median),
+                    frac=("dz", outlier_frac)
+                ).rename(columns={
                     "x": label,
                     "mad": stat_labels[0],
                     "median": stat_labels[1],
-                    "frac": stat_labels[2]},
-                inplace=True)
-            # row 1: photo-z scatter (nMAD)
-            sns.lineplot(
-                ax=axes[0, i], data=stats, x=label, y=stat_labels[0],
-                hue="data set")
-            # row 2: photo-z bias
-            sns.lineplot(
-                ax=axes[1, i], data=stats, x=label, y=stat_labels[1],
-                hue="data set")
-            self.add_refline(axes[1, i], "y", value=0.0)
-            # row 3: outlier fraction (dz > outlier_threshold)
-            sns.lineplot(
-                ax=axes[2, i], data=stats, x=label, y=stat_labels[2],
-                hue="data set")
+                    "frac": stat_labels[2]})
+                mean = stats.mean(level=label)
+                std = stats.std(level=label)
+                # row 1: photo-z scatter (nMAD)
+                # row 2: photo-z bias
+                # row 3: outlier fraction (dz > outlier_threshold)
+                for j, stlbl in enumerate(stat_labels):
+                    ax = axes[j, i]
+
+                    ax.fill_between(
+                        mean[label],
+                        mean[stlbl] - std[stlbl],
+                        mean[stlbl] + std[stlbl],
+                        color=f"C{n}", alpha=0.2)
+                    ax.plot(
+                        mean[label], mean[stlbl], color=f"C{n}")
+                    if i == 0:
+                        ax.set_ylabel(stlbl)
+                    if j == 1:
+                        self.add_refline(ax, "hor", value=0.0)
+                    else:
+                        ax.set_ylim(bottom=0.0)
             # row 4: binning data distribution
             sns.histplot(
                 data=data, x=label, ax=axes[3, i], bins=bins[label],

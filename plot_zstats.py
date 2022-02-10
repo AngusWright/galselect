@@ -76,9 +76,10 @@ if __name__ == "__main__":
             args.feature[i] = [
                 None if c == empty_token else c for c in args.feature[i]]
     if args.labels is not None:
-        if n_cats != len(args.labels):
+        n_feat = 0 if args.feature is None else len(args.feature)
+        if n_feat != len(args.labels):
             parser.exit(
-                f"number of input catalogues ({n_cats}) does not match the "
+                f"number of additional features ({n_feat}) does not match the "
                 f"provided labels ({len(args.labels)})")
     else:
         args.labels = [f[0] for f in args.feature]
