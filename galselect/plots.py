@@ -221,7 +221,7 @@ class Plotter(BasePlotter):
         g.plot_marginals(
             sns.histplot,
             **marginal_kws)
-        self.add_refline(get_ax(g), which="y", value=0.0)
+        self.add_refline(get_ax(g), which="hor", value=0.0)
         stats_along_xaxis(
             get_ax(g), df, xlabel, ylabel, xlog=log[0],
             bins=make_equal_n(df[xlabel].to_numpy(), NBINS//2, np.int_))
