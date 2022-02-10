@@ -67,7 +67,7 @@ def make_figure(nrows, ncols, size=2.5):
     for i, ax in enumerate(axes.flatten()):
         for pos in ["top", "right"]:
             ax.spines[pos].set_visible(False)
-        ax.grid(alpha=1.33)
+        ax.grid(alpha=0.33)
     return fig, axes
 
 
