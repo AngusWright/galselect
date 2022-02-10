@@ -93,5 +93,6 @@ if __name__ == "__main__":
                 plt.add_catalogue(
                     name, fpath, z_spec, z_phot, *[f[i] for f in args.feature],
                     fields=field)
+        plt.set_labels(args.labels)
         print(f"plotting to: {args.output}")
-        plt.plot(args.labels, outlier_threshold=args.z_thresh)
+        plt.plot(outlier_threshold=args.z_thresh)

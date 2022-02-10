@@ -6,7 +6,7 @@ import pandas as pd
 import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
-import scipy.stats
+from scipy.stats import median_absolute_deviation as nMAD
 import seaborn as sns
 
 
@@ -238,19 +238,24 @@ class Catalogue:
         self.z_spec = self._data[specname]
         self.z_phot = self._data[photname]
         if fields is None:
-            self.fields = np.zeros(len(self._data))
+            self.fields = pd.Series(
+                data=np.zeros(len(self._data)), name="fields")
         else:
             self.fields = self._data[fields]
+            self.fields.name = "fields"
         self.features = []
         for name in features:
             self.features.append(None if name is None else self._data[name])
+
+    def __len__(self):
+        return len(self._data)
 
 
 class RedshiftStats(BasePlotter):
 
     def __init__(self, fpath):
         super().__init__(fpath)
-        self._cats = []
+        self.cats = []
         self.n_feat = None
 
     def add_catalogue(
@@ -259,7 +264,7 @@ class RedshiftStats(BasePlotter):
             self.n_feat = len(features)
         else:
             assert(len(features) == self.n_feat)
-        self._cats.append(Catalogue(
+        self.cats.append(Catalogue(
             name, fpath, specname, photname, *features, fields=fields))
 
     @staticmethod
@@ -267,75 +272,85 @@ class RedshiftStats(BasePlotter):
         lims = np.percentile(data, q=[0.5, 99.5])
         return np.linspace(*lims, nbins)
 
-    def plot(self, labels, outlier_threshold=0.15):
+    def set_labels(self, labels):
+        self.labels = (r"$z_\mathsf{spec}$", r"$z_\mathsf{phot}$", *labels)
+
+    def stack_catalogues(self):
+        z_spec = np.concatenate([cat.z_spec for cat in self.cats])
+        z_phot = np.concatenate([cat.z_phot for cat in self.cats])
+        stacked = pd.DataFrame({
+            "data set": np.concatenate([
+                np.full(len(cat), cat.name) for cat in self.cats]),
+            self.labels[0]: z_spec,
+            self.labels[1]: z_phot})
+        for idx_feat, idx_label in enumerate(range(2, len(self.labels))):
+            feature = np.concatenate([
+                cat.features[idx_feat]
+                if cat.features[idx_feat] is not None else
+                np.full(len(cat), np.nan)
+                for cat in self.cats])
+            stacked[self.labels[idx_label]] = feature
+        stacked["dz"] = (z_phot - z_spec) / (1.0 + z_spec)
+        return stacked
+
+    def plot(self, outlier_threshold=0.15):
         def outlier_frac(x):
             return np.count_nonzero(x > outlier_threshold) / len(x)
 
-        assert(len(labels) == self.n_feat)
-        labels = [r"$z_\mathsf{spec}$", r"$z_\mathsf{phot}$", *labels]
-        # collect the data
-        dfs = []
-        fieldnames = []
-        for cat in self._cats:
-            fieldnames.append(cat.name)
-            df = pd.DataFrame({
-                "data set": cat.name,
-                "fields": 0 if cat.fields is None else cat.fields,
-                labels[0]: cat.z_spec,
-                labels[1]: cat.z_phot})
-            for i, feat in enumerate(cat.features, 2):
-                df[labels[i]] = feat
-            df["dz"] = (cat.z_phot - cat.z_spec) / (1.0 + cat.z_spec)
-            dfs.append(df)
-        data = pd.concat(dfs).reset_index()
-        bins = {l: self.make_bins(data[l], nbins=30) for l in labels}
-        # plot the data
-        stat_labels = [
-            r"$\sigma_\mathsf{mad}$",
-            r"$\mu_{\delta z}$",
-            rf"$\xi_{{{outlier_threshold}}}$"]
-        fig, axes = make_figure(4, len(labels), size=4)
-        for i, label in enumerate(labels):
-            for n, cat in enumerate(self._cats):
-                name = cat.name
-                mask = data["data set"] == name
-                grouper = data[mask].groupby([
-                    pd.cut(data[label][mask], bins[label]),
-                    "fields"])
-                stats = grouper.agg(
-                    x=(label, np.median),
-                    mad=("dz", scipy.stats.median_absolute_deviation),
-                    median=("dz", np.median),
-                    frac=("dz", outlier_frac)
-                ).rename(columns={
-                    "x": label,
-                    "mad": stat_labels[0],
-                    "median": stat_labels[1],
-                    "frac": stat_labels[2]})
-                mean = stats.mean(level=label)
-                std = stats.std(level=label)
-                # row 1: photo-z scatter (nMAD)
-                # row 2: photo-z bias
-                # row 3: outlier fraction (dz > outlier_threshold)
-                for j, stlbl in enumerate(stat_labels):
-                    ax = axes[j, i]
-
-                    ax.fill_between(
-                        mean[label],
-                        mean[stlbl] - std[stlbl],
-                        mean[stlbl] + std[stlbl],
-                        color=f"C{n}", alpha=0.2)
-                    ax.plot(
-                        mean[label], mean[stlbl], color=f"C{n}")
-                    if i == 0:
-                        ax.set_ylabel(stlbl)
-                    if j == 1:
-                        self.add_refline(ax, "hor", value=0.0)
-                    else:
-                        ax.set_ylim(bottom=0.0)
-            # row 4: binning data distribution
+        fig, axes = make_figure(4, len(self.labels), size=3.5)
+        # stack the data catalogues
+        cats = {cat.name: cat for cat in self.cats}
+        stacked = self.stack_catalogues()
+        # row 4: binning data distribution
+        bins = {}
+        for i, label in enumerate(self.labels):
+            ax = axes[3, i]
+            binning = self.make_bins(stacked[label], 30)
             sns.histplot(
-                data=data, x=label, ax=axes[3, i], bins=bins[label],
+                data=stacked, x=label, ax=ax, bins=binning,
                 common_norm=False, hue="data set", element="step",
                 stat="density")
+            if i != 0:
+                ax.set_ylabel("")
+            bins[label] = binning  # store for later use
+        # plot the binned statistics
+        stat_labels = [
+            # row 1: photo-z scatter (nMAD)
+            r"$\sigma_\mathsf{mad}$",
+            # row 2: photo-z bias
+            r"$\mu_{\delta z}$",
+            # row 3: outlier fraction (dz > outlier_threshold)
+            rf"$\xi_{{{outlier_threshold}}}$"]
+        for n, (catname, data) in enumerate(stacked.groupby("data set")):
+            for i, label in enumerate(self.labels):
+                binning = pd.cut(data[label], bins[label])
+                fields = cats[catname].fields
+                # group per field and feature bin, compute main statistics
+                stats = data.groupby([fields, binning]).agg(
+                    x=(label, np.mean),
+                    nmad=("dz", nMAD),
+                    mean=("dz", np.mean),
+                    fout=("dz", outlier_frac)
+                ).rename(columns={
+                    "nmad": stat_labels[0],
+                    "mean": stat_labels[1],
+                    "fout": stat_labels[2]})
+                # compute the statistics over all fields, if no fields are
+                # provided these are all identical
+                low = stats.groupby(label).quantile(0.1587)
+                mid = stats.groupby(label).quantile(0.5)
+                high = stats.groupby(label).quantile(0.8413)
+                # plot median and 68% uncertainty of the field statistics
+                for j, stlbl in enumerate(stat_labels):
+                    ax = axes[j, i]
+                    ax.fill_between(
+                        mid["x"], low[stlbl], high[stlbl],
+                        color=f"C{n}", alpha=0.2)
+                    ax.plot(mid["x"], mid[stlbl], color=f"C{n}")
+                    # add missing y-axis labels
+                    if i == 0:
+                        ax.set_ylabel(stlbl)
+                    # draw a reference line for a bias of zero
+                    if j == 1:
+                        self.add_refline(ax, "hor", value=0.0)
         self.add_fig(fig)
