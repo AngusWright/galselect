@@ -8,26 +8,35 @@ import astropandas as apd
 import galselect
 
 
-parser = argparse.ArgumentParser()
+empty_token = "-"
+
+
+parser = argparse.ArgumentParser(
+    description="Make a photo-z statistic plot by comparing to known galaxy "
+                "redshifts.",
+    epilog="All of the non-positional arguments above support omitting values "
+           f"by inserting the special value '{empty_token}'")
 parser.add_argument(
-    "input_files",
+    "input_file", nargs="+",
     help="input FITS files")
 parser.add_argument(
-    "-o", "--output", metavar="path", required=True
+    "-o", "--output", metavar="path", required=True,
     help="path for output PDF with plots (default: [match].pdf")
 parser.add_argument(
-    "--z-spec", nargs="*", required=True,
+    "--name", nargs="+", required=True,
+    help="list label names, one for each input catalogue")
+parser.add_argument(
+    "--z-spec", nargs="+", required=True,
     help="list of names of the spectroscopic/true redshift column in each of "
          "the input catalogues")
 parser.add_argument(
-    "--z-phot", nargs="*", required=True,
+    "--z-phot", nargs="+", required=True,
     help="list of names of the photometric redshift column in each of the "
          "input catalogues")
 parser.add_argument(
     "--feature", nargs="*", action="append",
     help="name of additional feature column in each of the input catalogues, "
-         "repeat for each additional feature to plot (if not present in a "
-         "catalogue, omit with - (hyphen)")
+         "repeat for each additional feature to plot")
 parser.add_argument(
     "--labels", nargs="*",
     help="optional TEX labels for each of the additional features")
@@ -45,10 +54,10 @@ parser.add_argument(
 if __name__ == "__main__":
     args = parser.parse_args()
     # check the provided inputs
-    n_cats = len(args.input_files)
-    if args.fields is None:
-        args.fields = [None] * n_cats
-    for name in ["z_spec", "z_phot", "field"]:
+    n_cats = len(args.input_file)
+    if args.field is None:
+        args.field = [None] * n_cats
+    for name in ["name", "z_spec", "z_phot", "field"]:
         n_param = len(getattr(args, name))
         if n_cats != n_param:
             parser.exit(
@@ -56,26 +65,36 @@ if __name__ == "__main__":
                 f"provided columns for --{name.replace('_', '-')} ({n_param})")
         # indicate omitted entries with None
         setattr(args, name, [
-            None if c == "-" else c for c in getattr(args, name)])
+            None if c == empty_token else c for c in getattr(args, name)])
     # check the variable features
-    n_feat = len(args.features)
-    for i, feat_set in enumerate(args.features):
-        if n_cats != len(feat_set):
-            parser.exit(
-                f"number of input catalogues ({n_cats}) does not match the "
-                f"provided feature #{i} ({len(feat_set)})")
-        args.features[i] = [None if c == "-" else c for c in args.features[i]]
+    if args.feature is not None:
+        for i, feat_set in enumerate(args.feature):
+            if n_cats != len(feat_set):
+                parser.exit(
+                    f"number of input catalogues ({n_cats}) does not match "
+                    f"the provided feature #{i} ({len(feat_set)})")
+            args.feature[i] = [
+                None if c == empty_token else c for c in args.feature[i]]
     if args.labels is not None:
         if n_cats != len(args.labels):
             parser.exit(
                 f"number of input catalogues ({n_cats}) does not match the "
                 f"provided labels ({len(args.labels)})")
+    else:
+        args.labels = [f[0] for f in args.feature]
 
-    with galselect.RedshiftStats(args.output, labels=args.labels) as plt:
+    with galselect.RedshiftStats(args.output) as plt:
         for i in range(n_cats):
-            plt.add_catalogue(
-                args.input_files[i], args.z_spec[i], args.z_phot[i],
-                *[args.features[i][n] for n in range(n_feat)],
-                fields=args.field[i])
+            name = args.name[i]
+            fpath = args.input_file[i]
+            z_spec = args.z_spec[i]
+            z_phot = args.z_phot[i]
+            field = args.field[i]
+            if args.feature is None:
+                plt.add_catalogue(name, fpath, z_spec, z_phot, fields=field)
+            else:
+                plt.add_catalogue(
+                    name, fpath, z_spec, z_phot, *[f[i] for f in args.feature],
+                    fields=field)
         print(f"plotting to: {args.output}")
-        plt.plot(args.fields, outlier_threshold=args.z_thresh)
+        plt.plot(args.labels, outlier_threshold=args.z_thresh)

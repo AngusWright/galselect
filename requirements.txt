@@ -1,6 +1,7 @@
 numpy
 pandas
 matplotlib
+scipy
 seaborn
 tqdm
 git+git@github.com:jlvdb/astropandas.git
