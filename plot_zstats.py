@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import os
-from tkinter import E
-
-import astropandas as apd
 
 import galselect
 

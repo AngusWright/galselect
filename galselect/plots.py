@@ -1,8 +1,4 @@
-import enum
-from re import S
 import warnings
-
-from pyrsistent import field
 
 import astropandas as apd
 import numpy as np
