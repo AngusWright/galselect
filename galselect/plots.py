@@ -1,3 +1,4 @@
+import collections
 import warnings
 
 import astropandas as apd
@@ -6,10 +7,13 @@ import pandas as pd
 import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
-from scipy.stats import median_absolute_deviation as nMAD
+from scipy.stats import median_abs_deviation as nMAD
 import seaborn as sns
 
 
+Statistic = collections.namedtuple("Statistic", ["name", "func", "label"])
+
+# seaborn configuration
 sns.set_theme(style="whitegrid")
 sns.color_palette()
 rc = matplotlib.rc_params()
@@ -251,105 +255,133 @@ class Catalogue:
         return len(self._data)
 
 
+def outlier_frac(delta_z, threshold=0.15):
+    return np.count_nonzero(delta_z > threshold) / len(delta_z)
+
+
 class RedshiftStats(BasePlotter):
 
-    def __init__(self, fpath):
+    _key_dset = "Data set"
+    _key_field = "fields"
+    _key_dz = "dz"
+
+    def __init__(self, fpath, out_thresh=0.15):
         super().__init__(fpath)
         self.cats = []
         self.n_feat = None
+        self.labels = [r"$z_\mathsf{spec}$", r"$z_\mathsf{phot}$"]
+        dz = r"\left( \frac{{{zs:} - {zp:}}}{{1 + {zs:}}} \right)".format(
+            zs=self.labels[0].strip("$"), zp=self.labels[1].strip("$"))
+        self.stats = (  # calculated on the redshift bias
+            # row 1: photo-z scatter (nMAD)
+            Statistic("nmad", nMAD, rf"$\sigma_\mathsf{{mad}}\,{dz}$"),
+            # row 2: photo-z bias
+            Statistic("mean", np.mean, rf"$\mu_{{\delta z}}\,{dz}$"),
+            # row 3: outlier fraction (dz > out_thresh)
+            Statistic("fout", outlier_frac, rf"$\xi_{{{out_thresh}}}\,{dz}$"))
+        self.is_log = [False, False]
 
     def add_catalogue(
-            self, name, fpath, specname, photname, *features, fields=None):
-        if self.n_feat is None:
-            self.n_feat = len(features)
-        else:
-            assert(len(features) == self.n_feat)
-        self.cats.append(Catalogue(
-            name, fpath, specname, photname, *features, fields=fields))
+            self, name, fpath, specname, photname, features, fields=None):
+        """
+        features is a dictionary where the key is the column name and the value
+        is a string used as x-axis label. If this label is used to match the
+        features between the provided catalogues.
+        """
+        print(f"reading catalogue: {fpath}")
+        data = apd.read_fits(fpath)
+        # collect the data
+        zspec = data[specname]
+        zphot = data[photname]
+        df = pd.DataFrame({
+            self._key_dset: name,
+            self._key_field: 0 if fields is None else data[fields],
+            # NOTE: check with value of dz in __init__
+            self._key_dz: (zspec - zphot) / (zspec + 1.0),
+            self.labels[0]: zspec,
+            self.labels[1]: zphot})
+        # add features
+        for colname, label in features.items():
+            df[label] = data[colname]
+            # collect list of all labels
+            if label not in self.labels:
+                self.labels.append(label)
+        # register
+        self.cats.append(df)
+
+    def get_stacked_column(self, label):
+        cats = [
+            cat[[self._key_dset, label]] for cat in self.cats if label in cat]
+        return pd.concat(cats, ignore_index=True)
+
+    def set_binscale(self, *is_log):
+        if len(self.cats) is None:
+            raise ValueError("binning scale must best after adding catalogue")
+        elif len(is_log) != len(self.labels) - 2:
+            raise ValueError(
+                "number of scale flags does not match the number of optional "
+                "features")
+        self.is_log = [False, False, *is_log]
 
     @staticmethod
-    def make_bins(data, nbins=30):
+    def make_bins(data, nbins=30, log=False):
         lims = np.percentile(data, q=[0.5, 99.5])
-        return np.linspace(*lims, nbins)
+        if log:
+            return np.logspace(*np.log10(lims), nbins)
+        else:
+            return np.linspace(*lims, nbins)
 
-    def set_labels(self, labels):
-        self.labels = (r"$z_\mathsf{spec}$", r"$z_\mathsf{phot}$", *labels)
-
-    def stack_catalogues(self):
-        z_spec = np.concatenate([cat.z_spec for cat in self.cats])
-        z_phot = np.concatenate([cat.z_phot for cat in self.cats])
-        stacked = pd.DataFrame({
-            "data set": np.concatenate([
-                np.full(len(cat), cat.name) for cat in self.cats]),
-            self.labels[0]: z_spec,
-            self.labels[1]: z_phot})
-        for idx_feat, idx_label in enumerate(range(2, len(self.labels))):
-            feature = np.concatenate([
-                cat.features[idx_feat]
-                if cat.features[idx_feat] is not None else
-                np.full(len(cat), np.nan)
-                for cat in self.cats])
-            stacked[self.labels[idx_label]] = feature
-        stacked["dz"] = (z_phot - z_spec) / (1.0 + z_spec)
-        return stacked
-
-    def plot(self, outlier_threshold=0.15):
-        def outlier_frac(x):
-            return np.count_nonzero(x > outlier_threshold) / len(x)
-
+    def plot(self, nbins=30):
         fig, axes = make_figure(4, len(self.labels), size=3.5)
-        # stack the data catalogues
-        cats = {cat.name: cat for cat in self.cats}
-        stacked = self.stack_catalogues()
-        # row 4: binning data distribution
+        if len(self.is_log) == 2:
+            self.is_log = [False] * len(self.labels)
+        # compute the global binning and plot
+        # row 4: distribution of data used for binning
         bins = {}
         for i, label in enumerate(self.labels):
+            # compute the binning
+            stacked = self.get_stacked_column(label)
+            bins[label] = self.make_bins(
+                stacked[label], nbins, log=self.is_log[i])
+            # plot the histogram
             ax = axes[3, i]
-            binning = self.make_bins(stacked[label], 30)
             sns.histplot(
-                data=stacked, x=label, ax=ax, bins=binning,
-                common_norm=False, hue="data set", element="step",
-                stat="density")
-            if i != 0:
+                data=stacked, x=label, hue=self._key_dset,
+                bins=bins[label], #log_scale=self.is_log[i],
+                common_norm=False, element="step",
+                stat="density", ax=ax)
+            if self.is_log[i]:
+                ax.set_xscale("log")
+            if i != 0:  # remove all y-axis labels except for first column
                 ax.set_ylabel("")
-            bins[label] = binning  # store for later use
-        # plot the binned statistics
-        stat_labels = [
-            # row 1: photo-z scatter (nMAD)
-            r"$\sigma_\mathsf{mad}$",
-            # row 2: photo-z bias
-            r"$\mu_{\delta z}$",
-            # row 3: outlier fraction (dz > outlier_threshold)
-            rf"$\xi_{{{outlier_threshold}}}$"]
-        for n, (catname, data) in enumerate(stacked.groupby("data set")):
+        # plot statistics of redshift bias
+        # row 1: photo-z scatter (nMAD)
+        # row 2: photo-z bias
+        # row 3: outlier fraction (dz > out_thresh)
+        for n, data in enumerate(self.cats):
             for i, label in enumerate(self.labels):
+                if label not in data:
+                    continue
                 binning = pd.cut(data[label], bins[label])
-                fields = cats[catname].fields
                 # group per field and feature bin, compute main statistics
-                stats = data.groupby([fields, binning]).agg(
-                    x=(label, np.mean),
-                    nmad=("dz", nMAD),
-                    mean=("dz", np.mean),
-                    fout=("dz", outlier_frac)
-                ).rename(columns={
-                    "nmad": stat_labels[0],
-                    "mean": stat_labels[1],
-                    "fout": stat_labels[2]})
-                # compute the statistics over all fields, if no fields are
-                # provided these are all identical
+                stats = data.groupby([self._key_field, binning]).agg(**{
+                    "x": (label, np.mean),
+                    **{stat.name: ("dz", stat.func) for stat in self.stats}})
+                # compute the statistics in each bin over all fields, if no
+                # fields are provided these are all identical
                 low = stats.groupby(label).quantile(0.1587)
                 mid = stats.groupby(label).quantile(0.5)
                 high = stats.groupby(label).quantile(0.8413)
                 # plot median and 68% uncertainty of the field statistics
-                for j, stlbl in enumerate(stat_labels):
+                for j, stat in enumerate(self.stats):
                     ax = axes[j, i]
                     ax.fill_between(
-                        mid["x"], low[stlbl], high[stlbl],
+                        mid["x"], low[stat.name], high[stat.name],
                         color=f"C{n}", alpha=0.2)
-                    ax.plot(mid["x"], mid[stlbl], color=f"C{n}")
+                    ax.plot(mid["x"], mid[stat.name], color=f"C{n}")
                     # add missing y-axis labels
                     if i == 0:
-                        ax.set_ylabel(stlbl)
+                        ax.set_ylabel(stat.label)
                     # draw a reference line for a bias of zero
                     if j == 1:
                         self.add_refline(ax, "hor", value=0.0)
