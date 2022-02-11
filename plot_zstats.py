@@ -15,7 +15,7 @@ parser.add_argument(
     help="input FITS files")
 parser.add_argument(
     "-o", "--output", metavar="path", required=True,
-    help="path for output PDF with plots (default: [match].pdf")
+    help="path for output PDF with plots")
 parser.add_argument(
     "--name", nargs="+", required=True,
     help="list label names, one for each input catalogue")
