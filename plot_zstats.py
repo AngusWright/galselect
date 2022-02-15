@@ -108,7 +108,7 @@ if __name__ == "__main__":
                 parser.error(f"feature #{i} has no valid arguments")
             # set labels if none are provided
             if args.labels[i] is None:
-                args.labels[i] = (  # use the first which is not None
+                args.labels[i] = tuple(  # use the first which is not None
                     c for c in feat_set if c is not None)[0]
 
     # check the binning scale
