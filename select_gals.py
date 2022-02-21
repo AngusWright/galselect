@@ -43,6 +43,9 @@ features.add_argument(
 data = parser.add_argument_group(
     "Configuration", description="Optional parameters")
 data.add_argument(
+    "--duplicates", action="store_true",
+    help="allow matching one mock object to many data objects")
+data.add_argument(
     "--clone", nargs="*",
     help="columns to clone from the data into the matched mock data (data "
          "redshift is always cloned)")
@@ -74,12 +77,6 @@ if __name__ == "__main__":
                 f"number of --feature dimensions ({len(args.feature)}) and "
                 f"--weights ({len(args.weights)}) do not match")
 
-    # read the mock and data input catalogues
-    print(f"reading data file: {args.data}")
-    data = apd.read_fits(args.data)
-    print(f"reading simulation file: {args.mock}")
-    mock = apd.read_fits(args.mock)
-
     # unpack the redshift column name parameter
     z_name_data, z_name_mock = args.z_name
 
@@ -89,10 +86,19 @@ if __name__ == "__main__":
         feature_names_data.append(feature_data)
         feature_names_mock.append(feature_mock)
 
+    # read the mock and data input catalogues
+    print(f"reading data file: {args.data}")
+    data_columns = [z_name_data, *feature_names_data]
+    if args.clone is not None:
+        data_columns.extend(args.clone)
+    data = apd.read_fits(args.data, columns=data_columns)
+    print(f"reading simulation file: {args.mock}")
+    mock = apd.read_fits(args.mock)
+
     # match the catalogues
     selector = galselect.DataMatcher(
         mock, z_name_mock, [f for f in feature_names_mock],
-        normalise=args.norm, weights=args.weights,
+        normalise=args.norm, weights=args.weights, duplicates=args.duplicates,
         redshift_warning=args.z_warn)
     # mask to redshift range
     mask = (
@@ -104,6 +110,8 @@ if __name__ == "__main__":
         print(
             f"WARNING: removed {nbad}/{len(mask)} data objects outside the mock"
             f" redshift range of {selector.z_min:.3f} to {selector.z_max:.3f}")
+    if args.clone is None:
+        args.clone = []
     if z_name_data not in args.clone:
         if z_name_data == z_name_mock:
             args.clone.append(f"{z_name_data}_data")
