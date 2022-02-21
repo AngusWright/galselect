@@ -22,6 +22,14 @@ class DataMatcher:
         Name of the redshift column in the mock data.
     feature_names : list of str
         List of names of the feature columns in the mock data.
+    normalise : bool
+        Normalise the feature space by its mean and standard deviation in each
+        dimension ("whitening").
+    weights : list or array_like
+        Relative weight for each feature, scales the feataure values. Mostly
+        useful if normalising the feature space data.
+    duplicates : bool
+        Allow assigning a mock data object to multiple data objects.
     initial_mask : array_like of bool (optional)
         Mask array that with an initial selection of mock data entries that
         may be used for the matching, entries with False will be ingored
@@ -33,8 +41,9 @@ class DataMatcher:
     """
     
     def __init__(
-            self, data, redshift_name, feature_names, normalise=False,
-            weights=None, initial_mask=None, redshift_warning=0.05):
+            self, data, redshift_name, feature_names, normalise=True,
+            weights=None, duplicates=False, initial_mask=None,
+            redshift_warning=0.05):
         if type(data) is not pd.DataFrame:
             raise TypeError(f"input data must be of type {type(pd.DataFrame)}")
         self.data = data
@@ -46,6 +55,7 @@ class DataMatcher:
                 raise ValueError(
                     "number of weights does not match the feature space "
                     "dimension")
+        self.duplicates = duplicates
 
         self._init_available_mask(initial_mask)
         self._init_feature_space(feature_names)
@@ -106,8 +116,10 @@ class DataMatcher:
         self.feature_space = np.column_stack([
             self.data[name] for name in feature_names])
         if self.normalise:
-            self.feature_space -= self.feature_space.mean(axis=0)
-            self.feature_space /= self.feature_space.std(axis=0)
+            self.norm_offset = self.feature_space.mean(axis=0)
+            self.norm_scale = self.self.feature_space.std(axis=0)
+            self.feature_space -= self.norm_offset
+            self.feature_space /= self.norm_scale
         if self.weights is not None:
             for i, w in enumerate(self.weights):
                 self.feature_space[:, i] *= w
@@ -204,8 +216,13 @@ class DataMatcher:
         if features.shape != (dim,):
             raise ValueError(
                 f"dimensions of data features do not match (expected {dim})")
+        if self.normalise:  # apply the normalisation of the mock data
+            data_features = features - self.norm_offset
+            data_features /= self.norm_scale
+        else:
+            data_features = features.copy()
         if self.weights is not None:
-            features *= self.weights
+            data_features *= self.weights
         # select the nearest objects in the mock data and its features used for
         # matching to the data
         neighbourhood_idx, z_range = self.close_redshifts(redshift, d_idx)
@@ -220,12 +237,13 @@ class DataMatcher:
 
         # find nearest unmasked mock entry
         data_dist = self.euclidean_distance(
-            features, mock_features[available_mask])
+            data_features, mock_features[available_mask])
         idx = np.argmin(data_dist)  # nearest neighbour in feature space
         match_data_dist = data_dist[idx]
         match_idx = neighbourhood_idx[available_mask][idx]
         # mask the match and collect meta data for the match
-        self.available_mask[match_idx] = False
+        if not self.duplicates:
+            self.available_mask[match_idx] = False
         meta = {
             "n_neigh": n_candidates,
             "dist_data": match_data_dist}
@@ -279,9 +297,6 @@ class DataMatcher:
             (dist_data), and, if return_mock_distance is given, the distance of
             the match to the next point in the mock feature space (dist_mock).
         """
-        if self.normalise:
-            features -= features.mean(axis=0)
-            features /= features.std(axis=0)
         idx_match = np.empty_like(redshifts, dtype=np.int)
         match_stats = {
             "n_neigh": np.empty_like(redshifts, dtype=np.int),
