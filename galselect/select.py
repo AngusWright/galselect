@@ -30,10 +30,6 @@ class DataMatcher:
         useful if normalising the feature space data.
     duplicates : bool
         Allow assigning a mock data object to multiple data objects.
-    initial_mask : array_like of bool (optional)
-        Mask array that with an initial selection of mock data entries that
-        may be used for the matching, entries with False will be ingored
-        during the matching.
     redshift_warning : float (optional)
         Issue warnings if the redshift neighbourhood of the selected mock data
         exceeds this threshold, e.g. due to a lock of objects in the redshift
@@ -57,27 +53,9 @@ class DataMatcher:
                     "dimension")
         self.duplicates = duplicates
 
-        self._init_available_mask(initial_mask)
+        self.match_count = np.zeros(len(self.data), dtype=np.int_)
         self._init_feature_space(feature_names)
         self._init_redshifts(redshift_name)
-
-    def _init_available_mask(self, initial_mask=None):
-        """
-        Create a mask for entries in the data table that can be used to match
-        to the data catalogue. The mask is updated after every match to ensure
-        that objects are used uniquely.
-
-        Parameters:
-        -----------
-        initial_mask : array_like of bool (optional)
-            Mask array that with an initial selection of mock data entries that
-            may be used for the matching, entries with False will be ingored
-            during the matching.
-        """
-        if initial_mask is None:
-            self.available_mask = np.ones(len(self.data), "bool")
-        else:
-            self.available_mask = initial_mask
 
     def _init_redshifts(self, redshift_name):
         """
@@ -117,7 +95,7 @@ class DataMatcher:
             self.data[name] for name in feature_names])
         if self.normalise:
             self.norm_offset = self.feature_space.mean(axis=0)
-            self.norm_scale = self.self.feature_space.std(axis=0)
+            self.norm_scale = self.feature_space.std(axis=0)
             self.feature_space -= self.norm_offset
             self.feature_space /= self.norm_scale
         if self.weights is not None:
@@ -216,7 +194,8 @@ class DataMatcher:
         if features.shape != (dim,):
             raise ValueError(
                 f"dimensions of data features do not match (expected {dim})")
-        if self.normalise:  # apply the normalisation of the mock data
+        # apply the normalisation of the mock data
+        if self.normalise:
             data_features = features - self.norm_offset
             data_features /= self.norm_scale
         else:
@@ -230,20 +209,24 @@ class DataMatcher:
             warnings.warn(
                 f"redshift range of neighbourhood exceeds dz={z_range:.3f}")
         mock_features = self.feature_space[neighbourhood_idx]
-        available_mask = self.available_mask[neighbourhood_idx]
-        n_candidates = np.count_nonzero(available_mask)
-        if n_candidates == 0:
-            raise ValueError(f"no unmasked entries within d_idx={d_idx:d}")
-
+        # check the assignment count, remove initial mask (values: -1)
+        if not self.duplicates:
+            # use only entries that are not matched yet
+            mask = self.match_count[neighbourhood_idx] == 0
+            n_candidates = np.count_nonzero(mask)
+            if n_candidates == 0:
+                raise ValueError(f"no unmasked entries within d_idx={d_idx:d}")
+        else:
+            n_candidates = len(mock_features)
+            mask = np.ones(n_candidates, dtype="bool")
         # find nearest unmasked mock entry
         data_dist = self.euclidean_distance(
-            data_features, mock_features[available_mask])
+            data_features, mock_features[mask])
         idx = np.argmin(data_dist)  # nearest neighbour in feature space
         match_data_dist = data_dist[idx]
-        match_idx = neighbourhood_idx[available_mask][idx]
-        # mask the match and collect meta data for the match
-        if not self.duplicates:
-            self.available_mask[match_idx] = False
+        match_idx = neighbourhood_idx[mask][idx]
+        # increment the assignment counts
+        self.match_count[match_idx] += 1
         meta = {
             "n_neigh": n_candidates,
             "dist_data": match_data_dist}
@@ -253,8 +236,8 @@ class DataMatcher:
         if return_mock_distance:
             match_features = self.feature_space[match_idx]
             mock_dist = self.euclidean_distance(match_features, mock_features)
-            # store the distance to the closest neighbour which is not the match
-            # itself
+            # store the distance to the closest neighbour which is not the
+            # match itself
             meta["dist_mock"] = np.sort(mock_dist)[1]
         return match_idx, meta
 
@@ -323,6 +306,7 @@ class DataMatcher:
         catalogue = self.data.iloc[idx_match].copy(deep=True)
         for colname, values in match_stats.items():
             catalogue[colname] = values
+        catalogue["match_count"] = self.match_count[idx_match]
         if clonecols is not None:
             for col in clonecols.columns:
                 if col in catalogue:
