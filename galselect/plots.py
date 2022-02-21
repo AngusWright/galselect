@@ -156,6 +156,9 @@ class Plotter(BasePlotter):
 
 
     def distances(self):
+        if "dist_mock" not in self.mock:
+            print("internal neighbour distance not available - skipping ...")
+            return
         log = [True, True]
         xlabel = "Match distance"
         ylabel = "Internal neighbour distance"
