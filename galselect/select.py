@@ -92,10 +92,10 @@ class DataMatcher:
                 raise KeyError(f"feature column '{name}' not found")
         self.feature_dim = len(feature_names)
         self.feature_space = np.column_stack([
-            self.data[name] for name in feature_names])
+            self.data[name].astype(np.float64) for name in feature_names])
         if self.normalise:
-            self.norm_offset = self.feature_space.mean(axis=0)
-            self.norm_scale = self.feature_space.std(axis=0)
+            self.norm_offset = np.mean(self.feature_space, axis=0)
+            self.norm_scale = np.std(self.feature_space, axis=0)
             self.feature_space -= self.norm_offset
             self.feature_space /= self.norm_scale
         if self.weights is not None:
@@ -196,7 +196,7 @@ class DataMatcher:
                 f"dimensions of data features do not match (expected {dim})")
         # apply the normalisation of the mock data
         if self.normalise:
-            data_features = features - self.norm_offset
+            data_features = features.astype(np.float64) - self.norm_offset
             data_features /= self.norm_scale
         else:
             data_features = features.copy()
@@ -229,7 +229,8 @@ class DataMatcher:
         self.match_count[match_idx] += 1
         meta = {
             "n_neigh": n_candidates,
-            "dist_data": match_data_dist}
+            "dist_data": match_data_dist,
+            "z_range": z_range}
 
         # optionally find the distance between the match and the next nearest
         # neighbour within mock data
@@ -283,7 +284,8 @@ class DataMatcher:
         idx_match = np.empty_like(redshifts, dtype=np.int)
         match_stats = {
             "n_neigh": np.empty_like(redshifts, dtype=np.int),
-            "dist_data": np.empty_like(redshifts, dtype=np.float)}
+            "dist_data": np.empty_like(redshifts, dtype=np.float),
+            "z_range": np.empty_like(redshifts, dtype=np.float)}
         if return_mock_distance:
             match_stats["dist_mock"] = np.empty_like(redshifts, dtype=np.float)
         # iterate the input catalogue and collect the match index and statistics
