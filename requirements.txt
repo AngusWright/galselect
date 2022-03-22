@@ -4,4 +4,4 @@ matplotlib
 scipy
 seaborn
 tqdm
-git+git@github.com:jlvdb/astropandas.git
+astropandas @ git+https://github.com/jlvdb/astropandas.git
