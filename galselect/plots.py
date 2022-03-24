@@ -81,17 +81,21 @@ class BasePlotter:
         self.fpath = fpath
 
     def __enter__(self, *args, **kwargs):
-        self._backend = PdfPages(self.fpath)
+        if self.fpath is not None:
+            self._backend = PdfPages(self.fpath)
         return self
 
     def __exit__(self, *args, **kwargs):
-        self._backend.close()
+        if self.fpath is not None:
+            self._backend.close()
 
     def add_fig(self, fig):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             fig.tight_layout()
-        self._backend.savefig(fig)
+        if self.fpath is not None:
+            self._backend.savefig(fig)
+        return fig
 
     @staticmethod
     def add_refline(ax, which, value=None):
@@ -133,7 +137,7 @@ class Plotter(BasePlotter):
             data=df, x=xlabel, log_scale=log,
             hue="type", legend=True, **marginal_kws)
         sns.despine()
-        self.add_fig(g.figure)
+        return self.add_fig(g.figure)
 
     def redshift_redshift(self, zdata, zmock):
         log = [False, False]
@@ -152,7 +156,7 @@ class Plotter(BasePlotter):
             **marginal_kws)
         self.add_refline(get_ax(g), which="diag")
         stats_along_xaxis(get_ax(g), df, xlabel, ylabel, xlog=log[0])
-        self.add_fig(g.figure)
+        return self.add_fig(g.figure)
 
 
     def distances(self):
@@ -173,7 +177,7 @@ class Plotter(BasePlotter):
         g.plot_marginals(
             sns.histplot,
             **marginal_kws)
-        self.add_fig(g.figure)
+        return self.add_fig(g.figure)
 
     def distance_redshift(self, zmock):
         log = [False, True]
@@ -191,7 +195,7 @@ class Plotter(BasePlotter):
             sns.histplot,
             **marginal_kws)
         stats_along_xaxis(get_ax(g), df, xlabel, ylabel, xlog=log[0])
-        self.add_fig(g.figure)
+        return self.add_fig(g.figure)
 
     def distance_neighbours(self):
         log=[False, True]
@@ -211,7 +215,7 @@ class Plotter(BasePlotter):
         stats_along_xaxis(
             get_ax(g), df, xlabel, ylabel, xlog=log[0],
             bins=make_equal_n(df[xlabel].to_numpy(), NBINS//2, np.int_))
-        self.add_fig(g.figure)
+        return self.add_fig(g.figure)
 
     def delta_redshift_neighbours(self, zmock, zdata):
         log = [False, False]
@@ -232,7 +236,7 @@ class Plotter(BasePlotter):
         stats_along_xaxis(
             get_ax(g), df, xlabel, ylabel, xlog=log[0],
             bins=make_equal_n(df[xlabel].to_numpy(), NBINS//2, np.int_))
-        self.add_fig(g.figure)
+        return self.add_fig(g.figure)
 
 
 class Catalogue:
@@ -268,7 +272,7 @@ class RedshiftStats(BasePlotter):
     _key_field = "fields"
     _key_dz = "dz"
 
-    def __init__(self, fpath, out_thresh=0.15):
+    def __init__(self, fpath=None, out_thresh=0.15):
         super().__init__(fpath)
         self.cats = []
         self.n_feat = None
@@ -388,4 +392,4 @@ class RedshiftStats(BasePlotter):
                     # draw a reference line for a bias of zero
                     if j == 1:
                         self.add_refline(ax, "hor", value=0.0)
-        self.add_fig(fig)
+        return self.add_fig(fig)
