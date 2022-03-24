@@ -295,8 +295,11 @@ class RedshiftStats(BasePlotter):
         is a string used as x-axis label. If this label is used to match the
         features between the provided catalogues.
         """
-        print(f"reading catalogue: {fpath}")
-        data = apd.read_fits(fpath)
+        if type(fpath) is str:
+            print(f"reading catalogue: {fpath}")
+            data = apd.read_fits(fpath)
+        else:
+            data = fpath
         # collect the data
         zspec = data[specname]
         zphot = data[photname]
