@@ -3,6 +3,7 @@ import argparse
 
 import astropandas as apd
 import numpy as np
+import tabeval
 
 import galselect
 
@@ -88,12 +89,21 @@ if __name__ == "__main__":
 
     # read the mock and data input catalogues
     print(f"reading data file: {args.data}")
-    data_columns = [z_name_data, *feature_names_data]
+    data_columns = [z_name_data]
+    data_terms = []
+    for feature in feature_names_data:
+        term = tabeval.MathTerm.from_string(feature)
+        data_columns.extend(term.list_variables())
+        data_terms.append(term)
     if args.clone is not None:
         data_columns.extend(args.clone)
     data = apd.read_fits(args.data, columns=data_columns)
     print(f"reading simulation file: {args.mock}")
     mock = apd.read_fits(args.mock)
+
+    # compute the data features
+    feature_cols = [feature_cols.append(term(data)) for term in data_terms]
+    data_features = np.column_stack(feature_cols)
 
     # match the catalogues
     selector = galselect.DataMatcher(
@@ -118,7 +128,7 @@ if __name__ == "__main__":
         else:
             args.clone.append(z_name_data)
     matched = selector.match_catalog(
-        data[z_name_data], data[[f for f in feature_names_data]].to_numpy(),
+        data[z_name_data], data_features,
         d_idx=args.idx_interval, clonecols=data[args.clone],
         return_mock_distance=args.distances, progress=args.progress)
 

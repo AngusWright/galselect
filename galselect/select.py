@@ -2,6 +2,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+import tabeval
 import tqdm
 
 
@@ -87,12 +88,11 @@ class DataMatcher:
         feature_names : list of str
             List of names of the feature columns in the mock data.
         """
-        for name in feature_names:
-            if name not in self.data:
-                raise KeyError(f"feature column '{name}' not found")
         self.feature_dim = len(feature_names)
-        self.feature_space = np.column_stack([
-            self.data[name].astype(np.float64) for name in feature_names])
+        columns = [
+            tabeval.evaluate(name, self.data).astype(np.float64)
+            for name in feature_names]
+        self.feature_space = np.column_stack(columns)
         if self.normalise:
             self.norm_offset = np.mean(self.feature_space, axis=0)
             self.norm_scale = np.std(self.feature_space, axis=0)
