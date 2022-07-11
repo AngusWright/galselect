@@ -1,3 +1,4 @@
+from statistics import quantiles
 import warnings
 from typing import Optional
 
@@ -6,6 +7,7 @@ import numpy.typing as npt
 import pandas as pd
 import tabeval
 import tqdm
+import matplotlib.pyplot as plt
 
 from .data import MatchingCatalogue, FeaturesIncompatibleError
 
@@ -171,7 +173,8 @@ class DataMatcher:
         d_idx=10000,
         duplicates=False,
         normalise=True,
-        progress=False
+        progress=False,
+        return_quantiles=False
     ):
         """
         Create data catalouge by matching a data catalogue in the feature space
@@ -195,6 +198,8 @@ class DataMatcher:
             Normalise (whiten) the feature space.
         progress : bool
             Show a progressbar for the matching operation.
+        return_quantiles : bool
+            Compute quantiles of the feature space distributions.
 
         Returns:
         --------
@@ -265,4 +270,42 @@ class DataMatcher:
         for col in clone_cols.columns:
             colname = f"{col}_data" if col in catalogue else col
             catalogue[colname] = clone_cols[col].to_numpy()
-        return catalogue
+
+        if return_quantiles:
+            mock = self.mock.copy()
+            mock.data = catalogue
+            quantiles = Quantiles(
+                mock=mock, mock_features=mock.get_features(normalise),
+                data=data, data_features=data_features)
+            return catalogue, quantiles
+        else:
+            return catalogue
+
+
+class Quantiles:
+
+    q = np.linspace(0.0, 1.0, 101)
+
+    def __init__(self, mock, mock_features, data, data_features):
+        self.mock_labels = mock.labels
+        self.mock_features = [
+            np.quantile(vals, q=self.q) for vals in mock_features.T]
+        self.data_labels = data.labels
+        self.data_features = [
+            np.quantile(vals, q=self.q) for vals in data_features.T]
+
+    def plot_qq(self):
+        for label, x, y in zip(
+                self.data_labels, self.mock_features, self.data_features):
+            plt.plot(x, y, label=label)
+        plt.legend()
+
+    def mock_q(self):
+        for label, x in zip(self.mock_labels, self.mock_features):
+            plt.plot(x, self.q, label=label)
+        plt.legend()
+
+    def data_q(self):
+        for label, x in zip(self.data_labels, self.data_features):
+            plt.plot(x, self.q, label=label)
+        plt.legend()
