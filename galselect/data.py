@@ -1,5 +1,5 @@
+import copy
 import fnmatch
-from pyexpat import features
 from typing import List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
@@ -47,11 +47,13 @@ class MatchingCatalogue(object):
             raise ValueError("empty list of feature (expressions) provided")
         # parse the feature expressions and get a list of all required columns
         self._feature_terms = []
+        self.labels = []
         columns = set()
         for expression in feature_expressions:
             term = tabeval.MathTerm.from_string(expression)
             columns.update(term.list_variables())
             self._feature_terms.append(term)
+            self.labels.append(expression)
         # check the feature column data types
         for col in columns:
             self._check_column(col)
@@ -110,6 +112,16 @@ class MatchingCatalogue(object):
     def get_redshift_limit(self) -> Tuple[float, float]:
         return self.data[self._redshift].min(), self.data[self._redshift].max()
 
+    def copy(self) -> 'MatchingCatalogue':
+        # create a new instance of the containter
+        new = MatchingCatalogue.__new__(MatchingCatalogue)
+        attr_list = (
+            "_redshift", "_feature_terms", "labels", "_weights", "_extra_cols")
+        for attr in attr_list:
+            setattr(new, attr, getattr(self, attr))
+        new.data = self.data.copy()
+        return new
+
     def apply_redshift_limit(
         self,
         lower: float,
@@ -119,10 +131,8 @@ class MatchingCatalogue(object):
             (self.data[self._redshift] >= lower) &
             (self.data[self._redshift] <= upper))
         # create a new instance of the containter with redshift mask applied
-        new = MatchingCatalogue.__new__(MatchingCatalogue)
+        new = self.copy()
         new.data = self.data[mask]
-        for attr in ("_redshift", "_feature_terms", "_weights", "_extra_cols"):
-            setattr(new, attr, getattr(self, attr))
         return new
 
     def get_redshifts(self) -> npt.NDArray:
