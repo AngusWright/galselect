@@ -282,6 +282,17 @@ class DataMatcher:
             return catalogue
 
 
+def q_mask_outliers(data, n_drop=6):
+    idx_extreme = np.argsort(np.diff(data))[-n_drop:]
+    idx_extreme.sort()
+    mid = len(data) // 2
+    i_low = idx_extreme[idx_extreme <= mid] + 1
+    i_high = idx_extreme[idx_extreme > mid]
+    mask = np.zeros(len(data), dtype="bool")
+    mask[i_low.max():i_high.min()] = True
+    return mask
+
+
 class Quantiles:
 
     q = np.linspace(0.0, 1.0, 101)
@@ -294,18 +305,85 @@ class Quantiles:
         self.data_features = [
             np.quantile(vals, q=self.q) for vals in data_features.T]
 
-    def plot_qq(self):
-        for label, x, y in zip(
-                self.data_labels, self.mock_features, self.data_features):
-            plt.plot(x, y, label=label)
-        plt.legend()
+    def qq_plot(self, i, median=True, deciles=True, ax=None, n_drop=6):
+        if ax is None:
+            ax = plt.gca()
+        x = self.data_features[i]
+        y = self.mock_features[i]
+        l = ax.plot(x, y, lw=2)[0]
+        if median:
+            i_median = np.searchsorted(self.q, 0.5)
+            ax.plot(
+                x[i_median], y[i_median], ls="none",
+                color=l.get_color(), marker="o", markersize=8)
+        if deciles:
+            i_deciles = np.searchsorted(self.q, np.arange(0.1, 1.0, 0.1))
+            ax.plot(
+                x[i_deciles], y[i_deciles], ls="none",
+                color=l.get_color(), marker="o", markersize=5)
+        ax.set_aspect("equal")
+        ax.set_xlabel(self.data_labels[i])
+        ax.set_ylabel(self.mock_labels[i])
+        # limits
+        mask = q_mask_outliers(x, n_drop) & q_mask_outliers(y, n_drop)
+        lims = min(x[mask][0], y[mask][0]), max(x[mask][-1], y[mask][-1])
+        ax.plot(lims, lims, color="k", lw=0.5)
+        ax.set_xlim(lims)
+        ax.set_ylim(lims)
 
-    def mock_q(self):
-        for label, x in zip(self.mock_labels, self.mock_features):
-            plt.plot(x, self.q, label=label)
-        plt.legend()
+    def q_plot(self, i, median=True, deciles=True, ax=None, n_drop=4):
+        if ax is None:
+            ax = plt.gca()
+        y = self.q
+        gmask = np.ones(len(y), dtype="bool")
+        for dset, label in zip(
+                [self.data_features, self.mock_features], ["data", "mock"]):
+            x = dset[i]
+            l = ax.plot(x, y, lw=2, label=label)[0]
+            if median:
+                i_median = np.searchsorted(y, 0.5)
+                ax.plot(
+                    x[i_median], y[i_median], ls="none",
+                    color=l.get_color(), marker="o", markersize=8)
+            if deciles:
+                i_deciles = np.searchsorted(y, np.arange(0.1, 1.0, 0.1))
+                ax.plot(
+                    x[i_deciles], y[i_deciles], ls="none",
+                    color=l.get_color(), marker="o", markersize=5)
+            gmask &= q_mask_outliers(x, n_drop)
+        ax.legend(loc="upper left")
+        # limits
+        lims = x[gmask][0], x[gmask][-1]
+        ax.set_xlim(lims)
+        ax.set_xlabel(f"{self.data_labels[i]} / {self.mock_labels[i]}")
+        ax.set_ylabel("CDF")
 
-    def data_q(self):
-        for label, x in zip(self.data_labels, self.data_features):
-            plt.plot(x, self.q, label=label)
-        plt.legend()
+    def p_plot(self, i, median=True, deciles=True, ax=None, n_drop=2):
+        if ax is None:
+            ax = plt.gca()
+        y = self.q[::2]
+        dy = np.diff(y)
+        gmask = np.ones(len(y), dtype="bool")
+        for dset, label in zip(
+                [self.data_features, self.mock_features], ["data", "mock"]):
+            x = dset[i][::2]
+            xmean = (x[1:] + x[:-1]) / 2.0
+            dx = np.diff(x)
+            l = ax.plot(xmean, dy/dx, lw=2, label=label)[0]
+            if median:
+                i_median = np.searchsorted(y, 0.5)
+                ax.plot(
+                    xmean[i_median], (dy/dx)[i_median], ls="none",
+                    color=l.get_color(), marker="o", markersize=8)
+            if deciles:
+                i_deciles = np.searchsorted(y, np.arange(0.1, 1.0, 0.1))
+                ax.plot(
+                    xmean[i_deciles], (dy/dx)[i_deciles], ls="none",
+                    color=l.get_color(), marker="o", markersize=5)
+            gmask &= q_mask_outliers(x, n_drop)
+        ax.legend(loc="upper left")
+        # limits
+        lims = x[gmask][0], x[gmask][-1]
+        ax.set_xlim(lims)
+        ax.set_xlabel(f"{self.data_labels[i]} / {self.mock_labels[i]}")
+        ax.set_ylabel("PDF")
