@@ -60,6 +60,10 @@ data.add_argument(
 data.add_argument(
     "--progress", action="store_true",
     help="display a progress bar")
+data.add_argument(
+    "--z-cut", action="store_true",
+    help="apply a redshift cut on the data to remove objects that exceed the "
+         "range of redshifts in the mock data")
 
 
 if __name__ == "__main__":
@@ -73,26 +77,29 @@ if __name__ == "__main__":
         feature_expr_data.append(feature_data)
         feature_expr_mock.append(feature_mock)
 
-    # load the data
-    print(f"reading data sample: {args.data}")
-    data = galselect.MatchingCatalogue(
-        apd.read_fits(args.data),
-        redshift=z_name_data,
-        features=feature_expr_data)
-    if args.weights is not None:
-        data.set_feature_weights(args.weights)
-    # add the columns to be cloned
-    if len(args.clone) > 0:
-        data.set_extra_columns(args.clone)
-
     # load the mocks
     print(f"reading mock sample: {args.mock}")
     mock = galselect.MatchingCatalogue(
         apd.read_fits(args.mock),
         redshift=z_name_mock,
-        features=feature_expr_mock)
+        feature_expressions=feature_expr_mock)
     if args.weights is not None:
         mock.set_feature_weights(args.weights)
+    zmin, zmax = mock.get_redshift_limit()
+
+    # load the data
+    print(f"reading data sample: {args.data}")
+    data = galselect.MatchingCatalogue(
+        apd.read_fits(args.data),
+        redshift=z_name_data,
+        feature_expressions=feature_expr_data)
+    if args.weights is not None:
+        data.set_feature_weights(args.weights)
+    # add the columns to be cloned
+    if len(args.clone) > 0:
+        data.set_extra_columns(args.clone)
+    if args.z_cut:
+        data = data.apply_redshift_limit(lower=zmin, upper=zmax)
 
     # initialise and run the matching
     if args.z_warn is None:
@@ -104,6 +111,7 @@ if __name__ == "__main__":
         data,
         d_idx=args.idx_interval,
         duplicates=args.duplicates,
+        normalise=args.norm,
         progress=args.progress,
         return_quantiles=False)  # TODO: plot or store quantiles?
 
