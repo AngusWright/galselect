@@ -58,69 +58,62 @@ data.add_argument(
     help="number of nearest neighbours in redshift used to find a match "
          "(default: %(default)s")
 data.add_argument(
-    "--distances", action="store_true",
-    help="store the distance in feature space of the matches in the output "
-         "catalogue")
-data.add_argument(
     "--progress", action="store_true",
     help="display a progress bar")
+data.add_argument(
+    "--z-cut", action="store_true",
+    help="apply a redshift cut on the data to remove objects that exceed the "
+         "range of redshifts in the mock data")
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    if args.z_warn is None:
-        args.z_warn = 1e9  # arbitrary large value to supress warnings
-    # check the weights argument
-    if args.weights is not None:
-        if len(args.weights) != len(args.feature):
-            parser.error(
-                f"number of --feature dimensions ({len(args.feature)}) and "
-                f"--weights ({len(args.weights)}) do not match")
 
     # unpack the redshift column name parameter
     z_name_data, z_name_mock = args.z_name
-
-    # unpack the mapping for feature/column names from mock to data
-    feature_names_data, feature_names_mock = [], []
+    # unpack the mapping of feature/column expresions for mock and data
+    feature_expr_data, feature_expr_mock = [], []
     for feature_data, feature_mock in args.feature:
-        feature_names_data.append(feature_data)
-        feature_names_mock.append(feature_mock)
+        feature_expr_data.append(feature_data)
+        feature_expr_mock.append(feature_mock)
 
-    # read the mock and data input catalogues
-    print(f"reading data file: {args.data}")
-    data_columns = [z_name_data, *feature_names_data]
-    if args.clone is not None:
-        data_columns.extend(args.clone)
-    data = apd.read_fits(args.data, columns=data_columns)
-    print(f"reading simulation file: {args.mock}")
-    mock = apd.read_fits(args.mock)
+    # load the mocks
+    print(f"reading mock sample: {args.mock}")
+    mock = galselect.MatchingCatalogue(
+        apd.read_fits(args.mock),
+        redshift=z_name_mock,
+        feature_expressions=feature_expr_mock)
+    if args.weights is not None:
+        mock.set_feature_weights(args.weights)
+    zmin, zmax = mock.get_redshift_limit()
 
-    # match the catalogues
+    # load the data
+    print(f"reading data sample: {args.data}")
+    data = galselect.MatchingCatalogue(
+        apd.read_fits(args.data),
+        redshift=z_name_data,
+        feature_expressions=feature_expr_data)
+    if args.weights is not None:
+        data.set_feature_weights(args.weights)
+    # add the columns to be cloned
+    if len(args.clone) > 0:
+        data.set_extra_columns(args.clone)
+    if args.z_cut:
+        data = data.apply_redshift_limit(lower=zmin, upper=zmax)
+
+    # initialise and run the matching
+    if args.z_warn is None:
+        args.z_warn = 1e9  # arbitrary large value to supress warnings
     selector = galselect.DataMatcher(
-        mock, z_name_mock, [f for f in feature_names_mock],
-        normalise=args.norm, weights=args.weights, duplicates=args.duplicates,
+        mock,
         redshift_warning=args.z_warn)
-    # mask to redshift range
-    mask = (
-        (data[z_name_data] > selector.z_min) &
-        (data[z_name_data] < selector.z_max))
-    nbad = len(mask) - np.count_nonzero(mask)
-    data = data[mask]
-    if nbad != 0:
-        print(
-            f"WARNING: removed {nbad}/{len(mask)} data objects outside the mock"
-            f" redshift range of {selector.z_min:.3f} to {selector.z_max:.3f}")
-    if args.clone is None:
-        args.clone = []
-    if z_name_data not in args.clone:
-        if z_name_data == z_name_mock:
-            args.clone.append(f"{z_name_data}_data")
-        else:
-            args.clone.append(z_name_data)
     matched = selector.match_catalog(
-        data[z_name_data], data[[f for f in feature_names_data]].to_numpy(),
-        d_idx=args.idx_interval, clonecols=data[args.clone],
-        return_mock_distance=args.distances, progress=args.progress)
+        data,
+        d_idx=args.idx_interval,
+        duplicates=args.duplicates,
+        normalise=args.norm,
+        progress=args.progress,
+        return_quantiles=False)  # TODO: plot or store quantiles?
 
     # write
     print(f"writing matched data: {args.output}")

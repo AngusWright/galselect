@@ -5,3 +5,4 @@ scipy
 seaborn
 tqdm
 astropandas
+tabeval @ git+https://github.com/jlvdb/tabeval.git
