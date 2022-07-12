@@ -67,7 +67,8 @@ class MatchingCatalogue(object):
     ) -> None:
         if not np.issubdtype(self.data[colname], np.number):
             raise TypeError(
-                f"type of column '{colname}' is not numeric")
+                f"type of column '{colname}' is not numeric: "
+                f"{self.data[colname].dtype}")
 
     def __len__(self) -> int:
         return len(self.data)
@@ -81,7 +82,9 @@ class MatchingCatalogue(object):
         feature_weights: Union[List[float], np.ndarray]
     ):
         if len(feature_weights) != self.n_features:
-            raise ValueError("number of features and weights does not match")
+            raise ValueError(
+                f"number of features ({self.n_features}) and weights "
+                f"({len(feature_weights)}) does not match")
         else:
             self._weights = feature_weights
 
