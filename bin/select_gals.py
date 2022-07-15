@@ -112,8 +112,8 @@ if __name__ == "__main__":
         d_idx=args.idx_interval,
         duplicates=args.duplicates,
         normalise=args.norm,
-        progress=args.progress,
-        return_quantiles=False)  # TODO: plot or store quantiles?
+        progress=args.progress
+    ).data
 
     # write
     print(f"writing matched data: {args.output}")

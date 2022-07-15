@@ -11,7 +11,7 @@ scripts = [
 
 setuptools.setup(
     name="galselect",
-    version="1.0",
+    version="1.1",
     author="Jan Luca van den Busch",
     description=".",
     long_description=long_description,

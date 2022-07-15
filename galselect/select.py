@@ -1,15 +1,12 @@
-from statistics import quantiles
 import warnings
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-import tabeval
 import tqdm
-import matplotlib.pyplot as plt
 
-from .data import MatchingCatalogue, FeaturesIncompatibleError
+from .data import MatchingCatalogue, FeaturesIncompatibleError, Quantiles
 
 
 def euclidean_distance(point, other):
@@ -106,7 +103,7 @@ class DataMatcher:
         data_features: npt.NDArray,
         d_idx: int,
         duplicates: bool
-    ):
+    ) -> Tuple[int, dict]:
         """
         Match a single data point in the feature space to the mock data with
         similar redshift. The method will fail if all mock objects are
@@ -169,13 +166,12 @@ class DataMatcher:
 
     def match_catalog(
         self,
-        data,
-        d_idx=10000,
-        duplicates=False,
-        normalise=True,
-        progress=False,
-        return_quantiles=False
-    ):
+        data: MatchingCatalogue,
+        d_idx: Optional[int] = 10000,
+        duplicates: Optional[bool] = False,
+        normalise: Optional[bool] = True,
+        progress: Optional[bool] = False
+    ) -> MatchingCatalogue:
         """
         Create data catalouge by matching a data catalogue in the feature space
         to the mock data with in a window of similar redshifts. Matches
@@ -198,18 +194,17 @@ class DataMatcher:
             Normalise (whiten) the feature space.
         progress : bool
             Show a progressbar for the matching operation.
-        return_quantiles : bool
-            Compute quantiles of the feature space distributions.
 
         Returns:
         --------
-        catalogue : pd.DataFrame
+        result : MatchingCatalogue
             Catalogue of matches from the mock data that are matched to the
             input data. Additional columns with match statistics are appended
             which contain the number of neighbours after masking (n_neigh), the
             distance in feature space between the data and the match
             (dist_data), and, if return_mock_distance is given, the distance of
             the match to the next point in the mock feature space (dist_mock).
+            The tabular data can be accessed through the `.data` attribute.
         """
         if not isinstance(data, MatchingCatalogue):
             raise TypeError(
@@ -271,119 +266,16 @@ class DataMatcher:
             colname = f"{col}_data" if col in catalogue else col
             catalogue[colname] = clone_cols[col].to_numpy()
 
-        if return_quantiles:
-            mock = self.mock.copy()
-            mock.data = catalogue
-            quantiles = Quantiles(
-                mock=mock, mock_features=mock.get_features(normalise),
-                data=data, data_features=data_features)
-            return catalogue, quantiles
-        else:
-            return catalogue
+        # output in data container
+        result = self.mock.template()  # copy all column attributes
+        result.data = catalogue
 
+        # store quantiles of the feature distributions for comparison
+        self._quantiles = Quantiles(
+            mock=result, mock_features=result.get_features(normalise),
+            data=data, data_features=data_features)
 
-def q_mask_outliers(data, n_drop=6):
-    idx_extreme = np.argsort(np.diff(data))[-n_drop:]
-    idx_extreme.sort()
-    mid = len(data) // 2
-    i_low = idx_extreme[idx_extreme <= mid] + 1
-    i_high = idx_extreme[idx_extreme > mid]
-    mask = np.zeros(len(data), dtype="bool")
-    mask[i_low.max():i_high.min()] = True
-    return mask
+        return result
 
-
-class Quantiles:
-
-    q = np.linspace(0.0, 1.0, 101)
-
-    def __init__(self, mock, mock_features, data, data_features):
-        self.mock_labels = mock.labels
-        self.mock_features = [
-            np.quantile(vals, q=self.q) for vals in mock_features.T]
-        self.data_labels = data.labels
-        self.data_features = [
-            np.quantile(vals, q=self.q) for vals in data_features.T]
-
-    def qq_plot(self, i, median=True, deciles=True, ax=None, n_drop=6):
-        if ax is None:
-            ax = plt.gca()
-        x = self.data_features[i]
-        y = self.mock_features[i]
-        l = ax.plot(x, y, lw=2)[0]
-        if median:
-            i_median = np.searchsorted(self.q, 0.5)
-            ax.plot(
-                x[i_median], y[i_median], ls="none",
-                color=l.get_color(), marker="o", markersize=8)
-        if deciles:
-            i_deciles = np.searchsorted(self.q, np.arange(0.1, 1.0, 0.1))
-            ax.plot(
-                x[i_deciles], y[i_deciles], ls="none",
-                color=l.get_color(), marker="o", markersize=5)
-        ax.set_aspect("equal")
-        ax.set_xlabel(self.data_labels[i])
-        ax.set_ylabel(self.mock_labels[i])
-        # limits
-        mask = q_mask_outliers(x, n_drop) & q_mask_outliers(y, n_drop)
-        lims = min(x[mask][0], y[mask][0]), max(x[mask][-1], y[mask][-1])
-        ax.plot(lims, lims, color="k", lw=0.5)
-        ax.set_xlim(lims)
-        ax.set_ylim(lims)
-
-    def q_plot(self, i, median=True, deciles=True, ax=None, n_drop=4):
-        if ax is None:
-            ax = plt.gca()
-        y = self.q
-        gmask = np.ones(len(y), dtype="bool")
-        for dset, label in zip(
-                [self.data_features, self.mock_features], ["data", "mock"]):
-            x = dset[i]
-            l = ax.plot(x, y, lw=2, label=label)[0]
-            if median:
-                i_median = np.searchsorted(y, 0.5)
-                ax.plot(
-                    x[i_median], y[i_median], ls="none",
-                    color=l.get_color(), marker="o", markersize=8)
-            if deciles:
-                i_deciles = np.searchsorted(y, np.arange(0.1, 1.0, 0.1))
-                ax.plot(
-                    x[i_deciles], y[i_deciles], ls="none",
-                    color=l.get_color(), marker="o", markersize=5)
-            gmask &= q_mask_outliers(x, n_drop)
-        ax.legend(loc="upper left")
-        # limits
-        lims = x[gmask][0], x[gmask][-1]
-        ax.set_xlim(lims)
-        ax.set_xlabel(f"{self.data_labels[i]} / {self.mock_labels[i]}")
-        ax.set_ylabel("CDF")
-
-    def p_plot(self, i, median=True, deciles=True, ax=None, n_drop=2):
-        if ax is None:
-            ax = plt.gca()
-        y = self.q[::2]
-        dy = np.diff(y)
-        gmask = np.ones(len(y), dtype="bool")
-        for dset, label in zip(
-                [self.data_features, self.mock_features], ["data", "mock"]):
-            x = dset[i][::2]
-            xmean = (x[1:] + x[:-1]) / 2.0
-            dx = np.diff(x)
-            l = ax.plot(xmean, dy/dx, lw=2, label=label)[0]
-            if median:
-                i_median = np.searchsorted(y, 0.5)
-                ax.plot(
-                    xmean[i_median], (dy/dx)[i_median], ls="none",
-                    color=l.get_color(), marker="o", markersize=8)
-            if deciles:
-                i_deciles = np.searchsorted(y, np.arange(0.1, 1.0, 0.1))
-                ax.plot(
-                    xmean[i_deciles], (dy/dx)[i_deciles], ls="none",
-                    color=l.get_color(), marker="o", markersize=5)
-            gmask &= q_mask_outliers(x, n_drop)
-        ax.legend(loc="upper left")
-        # limits
-        lims = x[gmask][0], x[gmask][-1]
-        ax.set_xlim(lims)
-        ax.set_xlabel(f"{self.data_labels[i]} / {self.mock_labels[i]}")
-        ax.set_ylabel("PDF")
+    def get_quantiles(self) -> Quantiles:
+        return self._quantiles

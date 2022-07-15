@@ -396,3 +396,100 @@ class RedshiftStats(BasePlotter):
                     if j == 1:
                         self.add_refline(ax, "hor", value=0.0)
         return self.add_fig(fig)
+
+
+def quantiles_mask_outliers(quantiles, n_drop=6):
+    idx_extreme = np.argsort(np.diff(quantiles))[-n_drop:]
+    idx_extreme.sort()
+    mid = len(quantiles) // 2
+    i_low = idx_extreme[idx_extreme <= mid] + 1
+    i_high = idx_extreme[idx_extreme > mid]
+    mask = np.zeros(len(quantiles), dtype="bool")
+    mask[i_low.max():i_high.min()] = True
+    return mask
+
+
+def QQ_plot(
+        quantiles, x_quantiles, y_quantiles, median=True, deciles=True,
+        n_drop=6, ax=None):
+    if ax is None:
+        ax = plt.gca()
+    l = ax.plot(x_quantiles, y_quantiles, lw=2)[0]
+    if median:
+        i_median = np.searchsorted(quantiles, 0.5)
+        ax.plot(
+            x_quantiles[i_median], y_quantiles[i_median],
+            ls="none", color=l.get_color(), marker="o", markersize=8)
+    if deciles:
+        i_deciles = np.searchsorted(quantiles, np.arange(0.1, 1.0, 0.1))
+        ax.plot(
+            x_quantiles[i_deciles], y_quantiles[i_deciles],
+            ls="none", color=l.get_color(), marker="o", markersize=5)
+    ax.set_aspect("equal")
+    # limits
+    mask = (
+        quantiles_mask_outliers(x_quantiles, n_drop) &
+        quantiles_mask_outliers(y_quantiles, n_drop))
+    lims = (
+        min(x_quantiles[mask][0], y_quantiles[mask][0]),
+        max(x_quantiles[mask][-1], y_quantiles[mask][-1]))
+    ax.plot(lims, lims, color="k", lw=0.5)
+    ax.set_xlim(lims)
+    ax.set_ylim(lims)
+
+
+def CDF_plot(
+        quantiles, data_quantiles, mock_quantiles,
+        median=True, deciles=True, n_drop=4, ax=None):
+    if ax is None:
+        ax = plt.gca()
+    gmask = np.ones(len(quantiles), dtype="bool")
+    for x, label in zip([data_quantiles, mock_quantiles], ["data", "mock"]):
+        l = ax.plot(x, quantiles, lw=2, label=label)[0]
+        if median:
+            i_median = np.searchsorted(quantiles, 0.5)
+            ax.plot(
+                x[i_median], quantiles[i_median], ls="none",
+                color=l.get_color(), marker="o", markersize=8)
+        if deciles:
+            i_deciles = np.searchsorted(quantiles, np.arange(0.1, 1.0, 0.1))
+            ax.plot(
+                x[i_deciles], quantiles[i_deciles], ls="none",
+                color=l.get_color(), marker="o", markersize=5)
+        gmask &= quantiles_mask_outliers(x, n_drop)
+    ax.legend(loc="upper left")
+    # limits
+    lims = x[gmask][0], x[gmask][-1]
+    ax.set_xlim(lims)
+    ax.set_ylabel("CDF")
+
+
+def PDF_plot(
+        quantiles, data_quantiles, mock_quantiles,
+        median=True, deciles=True, n_drop=2, smooth=2, ax=None):
+    if ax is None:
+        ax = plt.gca()
+    y = quantiles[::smooth]
+    dy = np.diff(y)
+    gmask = np.ones(len(y), dtype="bool")
+    for dset, label in zip([data_quantiles, mock_quantiles], ["data", "mock"]):
+        x = dset[::smooth]
+        xmean = (x[1:] + x[:-1]) / 2.0
+        dx = np.diff(x)
+        l = ax.plot(xmean, dy/dx, lw=2, label=label)[0]
+        if median:
+            i_median = np.searchsorted(y, 0.5)
+            ax.plot(
+                xmean[i_median], (dy/dx)[i_median], ls="none",
+                color=l.get_color(), marker="o", markersize=8)
+        if deciles:
+            i_deciles = np.searchsorted(y, np.arange(0.1, 1.0, 0.1))
+            ax.plot(
+                xmean[i_deciles], (dy/dx)[i_deciles], ls="none",
+                color=l.get_color(), marker="o", markersize=5)
+        gmask &= quantiles_mask_outliers(x, n_drop)
+    ax.legend(loc="upper left")
+    # limits
+    lims = x[gmask][0], x[gmask][-1]
+    ax.set_xlim(lims)
+    ax.set_ylabel("PDF")

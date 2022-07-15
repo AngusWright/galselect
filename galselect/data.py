@@ -1,4 +1,3 @@
-import copy
 import fnmatch
 from typing import List, Optional, Tuple, TypeVar, Union
 
@@ -7,6 +6,8 @@ import numpy.typing as npt
 import pandas as pd
 import tabeval  # evaluate expressions for data features
 from scipy.stats import median_abs_deviation
+
+from .plots import QQ_plot, CDF_plot, PDF_plot
 
 
 MCType = TypeVar("MCType", bound="MatchingCatalogue")
@@ -115,13 +116,19 @@ class MatchingCatalogue(object):
     def get_redshift_limit(self) -> Tuple[float, float]:
         return self.data[self._redshift].min(), self.data[self._redshift].max()
 
-    def copy(self) -> 'MatchingCatalogue':
-        # create a new instance of the containter
+    def template(self) -> 'MatchingCatalogue':
+        # create a new instance of the containter without duplicating the data
         new = MatchingCatalogue.__new__(MatchingCatalogue)
         attr_list = (
             "_redshift", "_feature_terms", "labels", "_weights", "_extra_cols")
         for attr in attr_list:
             setattr(new, attr, getattr(self, attr))
+        new.data = pd.DataFrame(columns=self.data.columns)
+        return new
+
+    def copy(self) -> 'MatchingCatalogue':
+        # create a new instance of the containter
+        new = self.template()
         new.data = self.data.copy()
         return new
 
@@ -178,3 +185,41 @@ class MatchingCatalogue(object):
             else:
                 raise TypeError(f"invalid normalisation '{type(normalise)}'")
             return (features - offset) / scale
+
+
+class Quantiles:
+
+    q = np.linspace(0.0, 1.0, 101)
+
+    def __init__(self, mock, mock_features, data, data_features):
+        self.mock_labels = mock.labels
+        self.mock_features = [
+            np.quantile(vals, q=self.q) for vals in mock_features.T]
+        self.data_labels = data.labels
+        self.data_features = [
+            np.quantile(vals, q=self.q) for vals in data_features.T]
+
+    def QQ_plot(self, i, median=True, deciles=True, n_drop=6, ax=None):
+        QQ_plot(
+            self.q, self.data_features[i], self.mock_features[i],
+            median=median, deciles=deciles, n_drop=n_drop, ax=ax)
+        if ax is None:
+            ax = plt.gca()
+        ax.set_xlabel(self.data_labels[i])
+        ax.set_ylabel(self.mock_labels[i])
+
+    def CDF_plot(self, i, median=True, deciles=True, n_drop=4, ax=None):
+        CDF_plot(
+            self.q, self.data_features[i], self.mock_features[i],
+            median=median, deciles=deciles, n_drop=n_drop, ax=ax)
+        if ax is None:
+            ax = plt.gca()
+        ax.set_xlabel(f"{self.data_labels[i]} / {self.mock_labels[i]}")
+
+    def PDF_plot(self, i, median=True, deciles=True, ax=None, n_drop=2):
+        PDF_plot(
+            self.q, self.data_features[i], self.mock_features[i],
+            median=median, deciles=deciles, n_drop=n_drop, ax=ax)
+        if ax is None:
+            ax = plt.gca()
+        ax.set_xlabel(f"{self.data_labels[i]} / {self.mock_labels[i]}")
