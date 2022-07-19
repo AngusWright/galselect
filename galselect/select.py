@@ -9,19 +9,28 @@ import tqdm
 from .data import MatchingCatalogue, FeaturesIncompatibleError, Quantiles
 
 
-def euclidean_distance(point, other):
+def euclidean_distance(
+    point: npt.ArrayLike,
+    other: npt.ArrayLike
+) -> npt.NDArray:
     """
     Compute the Euclidean distance between two points, a point and a set of
-    points or two set of points with equal size.
+    points or two set of points with equal length. A point is defined as a
+    vector of features (coordinates).
 
     Parameters:
     -----------
-    point : array_like
-    other : array_like
+    point : array-like
+        Input coordinates, can be a single vector or an array of vectors.
+    other : array-like
+        Input coordinates, can be a single vector or an array of vectors. If
+        both `point` and `other` are arrays, they must have the same length.
 
     Returns:
     --------
-    dist : array_like
+    dist : array-like
+        Eucleadean distance between points in both inputs. The output is an
+        array of length equal to the longest of the two inputs.
     """
     dist_squares = (np.atleast_2d(other) - np.atleast_2d(point)) ** 2
     dist = np.sqrt(dist_squares.sum(axis=1))
@@ -47,9 +56,10 @@ class DataMatcher:
     """
     
     def __init__(
-            self,
-            mockdata: MatchingCatalogue,
-            redshift_warning: Optional[float] = 0.05):
+        self,
+        mockdata: MatchingCatalogue,
+        redshift_warning: Optional[float] = 0.05
+    ) -> None:
         if not isinstance(mockdata, MatchingCatalogue):
             raise TypeError(
                 f"input data must be of type {type(MatchingCatalogue)}")
@@ -205,6 +215,9 @@ class DataMatcher:
             (dist_data), and, if return_mock_distance is given, the distance of
             the match to the next point in the mock feature space (dist_mock).
             The tabular data can be accessed through the `.data` attribute.
+        quantiles : Quantiles
+            Get the quantiles of the feature distributions of the data and the
+            matched catalogue from the latest matching run.
         """
         if not isinstance(data, MatchingCatalogue):
             raise TypeError(
@@ -271,11 +284,8 @@ class DataMatcher:
         result.data = catalogue
 
         # store quantiles of the feature distributions for comparison
-        self._quantiles = Quantiles(
+        quantiles = Quantiles(
             mock=result, mock_features=result.get_features(normalise),
             data=data, data_features=data_features)
 
-        return result
-
-    def get_quantiles(self) -> Quantiles:
-        return self._quantiles
+        return result, quantiles

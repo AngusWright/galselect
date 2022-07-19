@@ -107,14 +107,13 @@ if __name__ == "__main__":
     selector = galselect.DataMatcher(
         mock,
         redshift_warning=args.z_warn)
-    matched = selector.match_catalog(
+    matched, _ = selector.match_catalog(
         data,
         d_idx=args.idx_interval,
         duplicates=args.duplicates,
         normalise=args.norm,
-        progress=args.progress
-    ).data
+        progress=args.progress)
 
     # write
     print(f"writing matched data: {args.output}")
-    apd.to_fits(matched, args.output)
+    apd.to_fits(matched.data, args.output)
