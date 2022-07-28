@@ -21,6 +21,25 @@ def compute_norm(feature_array) -> Tuple[npt.NDArray, npt.NDArray]:
     return offset, scale
 
 
+def column_numeric(column: pd.Series) -> None:
+    """
+    Verify that a DataFrame column contains numerical data.
+
+    Parameters:
+    -----------
+    column : pd.Series
+        Column to check.
+    
+    Raises:
+    -------
+    TypeError
+        If the column data is not numerical.
+    """
+    if not np.issubdtype(column, np.number):
+        raise TypeError(
+            f"type of column '{column.name}' is not numeric: {column.dtype}")
+
+
 class FeaturesIncompatibleError(Exception):
     pass
 
@@ -42,6 +61,8 @@ class MatchingCatalogue(object):
         feature space that is used to match two catalogues. The expressions
         may include constonstants and column names of the dataframes as
         variables and standard set of mathematical operators (see `tabeval`).
+    sort : bool
+        Sort the data by redshift increasingly.
     """
 
     _weights = None
@@ -52,9 +73,8 @@ class MatchingCatalogue(object):
         redshift: str,
         feature_expressions: List[str],
     ) -> None:
-        self.data = dataframe
         # check the redshift data
-        self._check_column(redshift)
+        column_numeric(dataframe[redshift])
         self._redshift = redshift
         # check the feature data
         if len(feature_expressions) == 0:
@@ -70,32 +90,12 @@ class MatchingCatalogue(object):
             self.labels.append(expression)
         # check the feature column data types
         for col in columns:
-            self._check_column(col)
+            column_numeric(dataframe[col])
         # initialise the optional feature weights
         self._weights = np.ones(self.n_features)
         self._extra_cols = []
-
-    def _check_column(
-        self,
-        colname: str
-    ) -> None:
-        """
-        Verify that a column contains numerical data.
-
-        Parameters:
-        -----------
-        colname : str
-            Name of the column to check.
-        
-        Raises:
-        -------
-        TypeError
-            If the column data is not numerical.
-        """
-        if not np.issubdtype(self.data[colname], np.number):
-            raise TypeError(
-                f"type of column '{colname}' is not numeric: "
-                f"{self.data[colname].dtype}")
+        # apply redshift sorting
+        self.data = dataframe.sort_values(by=redshift)
 
     def __len__(self) -> int:
         return len(self.data)
@@ -194,7 +194,8 @@ class MatchingCatalogue(object):
         zmax : float
             Maximum redshift.
         """
-        return self.data[self._redshift].min(), self.data[self._redshift].max()
+        # make use of the fact that data is sorted by redshift
+        return self.data[self._redshift].iloc[0], self.data[self._redshift].iloc[-1]
 
     def template(self) -> MCType:
         """

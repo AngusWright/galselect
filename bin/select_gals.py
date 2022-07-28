@@ -102,6 +102,12 @@ if __name__ == "__main__":
         data = data.apply_redshift_limit(lower=zmin, upper=zmax)
 
     # initialise and run the matching
+    print("matching on:")
+    mterm_len = max(len(s) for s in feature_expr_mock)
+    dterm_len = max(len(s) for s in feature_expr_data)
+    for feature_data, feature_mock in args.feature:
+        print(f"    {feature_mock:{mterm_len}s} -> {feature_data:{dterm_len}}")
+
     if args.z_warn is None:
         args.z_warn = 1e9  # arbitrary large value to supress warnings
     selector = galselect.DataMatcher(

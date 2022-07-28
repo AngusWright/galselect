@@ -65,11 +65,9 @@ class DataMatcher:
                 f"input data must be of type {type(MatchingCatalogue)}")
         self.mock = mockdata
         self.z_warn = redshift_warning
-        # sort the mock redshift data in ascending order and create an index
-        # mapping from the sorted to originally ordered mock data
+        # initialise and extract data
         self.redshifts = self.mock.get_redshifts()
-        self.z_sort_idx = np.argsort(self.redshifts)
-        self.z_sorted = self.redshifts[self.z_sort_idx]
+        self.match_count = np.zeros(len(self.mock), dtype=int)
 
     def redshift_window(
         self,
@@ -77,8 +75,7 @@ class DataMatcher:
         d_idx: int
     ):
         """
-        Find a number of objects in the mock data that are closest to a given
-        input redshift.
+        Compute the index range of objects closest to a given refence redshift.
 
         Parameters:
         -----------
@@ -90,22 +87,16 @@ class DataMatcher:
         
         Returns:
         --------
-        idx_mock : array_like of int
-            Indices of entries in the mock data that selects the d_idx closest
-            objects around the input redshift.
-        dz : float
-            Redshift range covered by the selected mock objects.
+        window : slice
+            Slice that selects the data falling into the window.
         """
         d_idx //= 2
         # find the appropriate range of indices in the sorted redshift array
         # around the target redshift
-        idx = np.searchsorted(self.z_sorted, redshift)
+        idx = np.searchsorted(self.redshifts, redshift)
         idx_lo = np.maximum(idx - d_idx, 0)
-        idx_hi = np.minimum(idx + d_idx, len(self.z_sorted) - 1)
-        # map the selected indices back to the order in the mock data table
-        idx_mock = self.z_sort_idx[idx_lo:idx_hi+1]
-        dz = self.z_sorted[idx_hi] - self.z_sorted[idx_lo]
-        return idx_mock, dz
+        idx_hi = np.minimum(idx + d_idx, len(self.redshifts) - 1)
+        return slice(idx_lo, idx_hi)
 
     def _single_match(
         self,
@@ -135,44 +126,40 @@ class DataMatcher:
         --------
         match_idx : int
             Index in the mock data table of the best match to the input data.
-        meta : dict
-            Meta data for the match such as the number of neighbours after
-            masking (n_neigh), the distance in feature space between the data
-            and the match (dist_data), and the width of the redshift window.
+        match_data_dist : float
+            Tha distance between the data object and the best match.
+        n_candidates : int
+            The number of candidates available for matching.
+        z_range : float
+            The width of the redshift window in which the matching occured.
         """
         # select the nearest objects in the mock data and its features used for
         # matching to the data
-        window_idx, z_range = self.redshift_window(redshift, d_idx)
+        window = self.redshift_window(redshift, d_idx)
+        z_range = self.redshifts[window.stop] - self.redshifts[window.start]
         if z_range > self.z_warn:
             warnings.warn(
                 f"redshift range of window exceeds dz={z_range:.3f}")
-        mock_features = self.features[window_idx]
+        mock_features = self.features[window]
 
-        # check the assignment count, remove initial mask (values: -1)
         if not duplicates:
             # use only entries that are not matched yet
-            mask = self.match_count[window_idx] == 0
+            mask = self.match_count[window] == 0
             n_candidates = np.count_nonzero(mask)
             if n_candidates == 0:
                 raise ValueError(f"no unmasked entries within d_idx={d_idx:d}")
         else:
+            mask = ...  # selects every entry
             n_candidates = len(mock_features)
-            mask = np.ones(n_candidates, dtype="bool")
 
         # find nearest unmasked mock entry
-        data_dist = euclidean_distance(
-            data_features, mock_features[mask])
+        data_dist = euclidean_distance(data_features, mock_features[mask])
         idx = np.argmin(data_dist)  # nearest neighbour in feature space
-        match_data_dist = data_dist[idx]
-        match_idx = window_idx[mask][idx]
+        match_idx = window.start + idx
 
-        # increment the assignment counts
         self.match_count[match_idx] += 1
-        meta = {
-            "n_neigh": n_candidates,
-            "dist_data": match_data_dist,
-            "z_range": z_range}
-        return match_idx, meta
+        match_data_dist = data_dist[idx]
+        return match_idx, match_data_dist, n_candidates, z_range
 
     def match_catalog(
         self,
@@ -223,9 +210,9 @@ class DataMatcher:
             raise TypeError(
                 f"input data must be of type {type(MatchingCatalogue)}")
         # check the redshift range
-        mock_lim = self.mock.get_redshift_limit()
-        data_lim = data.get_redshift_limit()
-        if data_lim[0] < mock_lim[0] or data_lim[1] > mock_lim[1]:
+        mock_zlo, mock_zhi = self.mock.get_redshift_limit()
+        data_zlo, data_zhi = data.get_redshift_limit()
+        if data_zlo < mock_zlo or data_zhi > mock_zhi:
             raise ValueError("data redshift range exceeds the mock range")
         # check the feature compatibility
         if not self.mock.is_compatible(data):
@@ -236,52 +223,49 @@ class DataMatcher:
             normalise = self.mock  # compute normalisation from mock data
         self.features = self.mock.get_features(normalise)
         data_features = data.get_features(normalise)
-        # initialise the output columns
-        idx_match = np.empty(len(data), dtype=int)
-        match_stats = {
-            "n_neigh": np.empty(len(data), dtype=int),
-            "dist_data": np.empty(len(data), dtype=np.float),
-            "z_range": np.empty(len(data), dtype=np.float)}
-        self.match_count = np.zeros(len(self.mock), dtype=int)
+
+        # initialise the statistics columns
+        match_stats = pd.DataFrame(index=data.data.index)
+        coliter = zip(
+            ["idx_match", "match_dist", "n_neigh", "z_range"],
+            [int, float, int, float])
+        for name, dtype in coliter:
+            match_stats[name] = np.empty(len(data), dtype)
 
         # iterate the input catalogue and collect match index and statistics
         data_iter = zip(data.get_redshifts(), data_features)
+        self.match_count[:] = 0  # reset counts
         try:
             if progress:
                 pbar = tqdm.tqdm(total=len(data))
-            step = 500
             for i, (redshift, entry) in enumerate(data_iter):
-                idx, meta = self._single_match(
+                match_stats.iloc[i] = self._single_match(
                     redshift, entry, d_idx, duplicates)
-                # collect the output data
-                idx_match[i] = idx
-                for key, val in meta.items():
-                    match_stats[key][i] = val
-                if progress and i % step == 0:
-                    pbar.update(step)
+                if progress:
+                    pbar.update()
         finally:
             if progress:
                 pbar.close()
+        match_stats["match_count"] = self.match_count[match_stats["idx_match"]]
+
+        # collect data from the mock catalogue
+        if self.mock.has_extra_columns():
+            mockcols = self.mock.get_extra_columns()
+        else:
+            mockcols = self.mock.data
+        mockcols = mockcols.iloc[match_stats["idx_match"]]
+        mockcols.set_index(data.data.index, inplace=True)
+        # collect cloned columns and rename duplicates
+        datacols = data.get_extra_columns().copy()
+        datacols.rename(
+            columns={
+                col: f"{col}_data" for col in datacols.columns
+                if col in mockcols},
+            inplace=True)
 
         # construct the matched output catalogue
-        if self.mock.has_extra_columns():
-            mock = self.mock.get_extra_columns()
-        else:
-            mock = self.mock.data
-        catalogue = mock.iloc[idx_match].copy(deep=True)
-        for colname, values in match_stats.items():
-            catalogue[colname] = values
-        catalogue["match_count"] = self.match_count[idx_match]
-
-        # clone additional columns from the data
-        clone_cols = data.get_extra_columns()
-        for col in clone_cols.columns:
-            colname = f"{col}_data" if col in catalogue else col
-            catalogue[colname] = clone_cols[col].to_numpy()
-
-        # output in data container
         result = self.mock.template()  # copy all column attributes
-        result.data = catalogue
+        result.data = pd.concat([mockcols, match_stats, datacols], axis=1)
 
         # store quantiles of the feature distributions for comparison
         quantiles = Quantiles(
