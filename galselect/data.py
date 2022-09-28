@@ -98,6 +98,8 @@ class MatchingCatalogue(object):
         # apply redshift sorting
         if not is_sorted:
             self.data = dataframe.sort_values(by=redshift)
+        else:
+            self.data = dataframe
 
     def __len__(self) -> int:
         return len(self.data)
