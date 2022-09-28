@@ -61,8 +61,8 @@ class MatchingCatalogue(object):
         feature space that is used to match two catalogues. The expressions
         may include constonstants and column names of the dataframes as
         variables and standard set of mathematical operators (see `tabeval`).
-    sort : bool
-        Sort the data by redshift increasingly.
+    is_sorted : bool
+        Whether the data is already sorted increasingly by redshift.
     """
 
     _weights = None
@@ -72,6 +72,7 @@ class MatchingCatalogue(object):
         dataframe: pd.DataFrame,
         redshift: str,
         feature_expressions: List[str],
+        is_sorted: Optional[bool] = False
     ) -> None:
         # check the redshift data
         column_numeric(dataframe[redshift])
@@ -95,7 +96,8 @@ class MatchingCatalogue(object):
         self._weights = np.ones(self.n_features)
         self._extra_cols = []
         # apply redshift sorting
-        self.data = dataframe.sort_values(by=redshift)
+        if not is_sorted:
+            self.data = dataframe.sort_values(by=redshift)
 
     def __len__(self) -> int:
         return len(self.data)
