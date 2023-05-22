@@ -47,3 +47,12 @@ Meaning of the arguments:
  - `--idx-interval`: This parameter determines the redshift window in which the matching is performed. Mock objects with redshifts outside this window are ignored during the matching. The window is centered on the redshift of the data object `z_data` to be matched and is limited to the `2*N` objects with redshifts just below and above `z_data` in the mock catalogue. I.e. if `--idx-interval 1000`, the 2000 closest objects in redshift are considered as candidates for the matching.  
    *Note:* If `--duplicates` is not provided, the script will interrupt if there are no more sufficient unmatched objects left in the current redshift window. Either increase the `--idx-interval` value, use a larger simulation box, or use the `--duplicates` flag.
  - `--z-cut` (flag): Automatically cut the data catalogue to the redshift range of the mock cataloge, e.g. reject data objects with `z < z_min_mock`or `z > z_max_mock`, which otherwise cannot be matched.
+
+### Troubleshooting
+
+The `select_gals.py` script adds a few columns to the output file that can provide additional insights into the matching. These are:
+
+ - `idx_match` (int): The running index of matched mock object in the input mock catalogue.
+ - `match_dist` (float): The total Euclidean distance in the feature space. Note that this may include the normalisation if `--norm` is used.
+ - `n_neigh` (int): The total number of neighbours available in the redshift window. Always equal to `--idx-match` if `--duplicates` is used, otherwise depends on the number density and matching order of objects in the catalogue.
+ - `z_range` (float): The total width of the redshift window `z_max - z_min` for this match.
