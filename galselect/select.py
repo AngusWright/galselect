@@ -90,12 +90,53 @@ class DataMatcher:
         window : slice
             Slice that selects the data falling into the window.
         """
-        d_idx //= 2
-        # find the appropriate range of indices in the sorted redshift array
-        # around the target redshift
-        idx = np.searchsorted(self.redshifts, redshift)
-        idx_lo = np.maximum(idx - d_idx, 0)
-        idx_hi = np.minimum(idx + d_idx, len(self.redshifts) - 1)
+        #d_idx //= 2
+        ## find the appropriate range of indices in the sorted redshift array
+        ## around the target redshift
+        #idx = np.searchsorted(self.redshifts, redshift)
+        #idx_lo = np.maximum(idx - d_idx, 0)
+        #idx_hi = np.minimum(idx + d_idx, len(self.redshifts) - 1)
+        #return slice(idx_lo, idx_hi)
+        if d_idx==0: 
+            #Assume redshift axis is discrete and use all matching values 
+            #Left returns the lowest index of all matching values 
+            idx_lo = np.searchsorted(self.redshifts, redshift,side='left')
+            #Right returns the highest index of all matching values 
+            idx_hi = np.searchsorted(self.redshifts, redshift,side='right')
+            if idx_lo == idx_hi: 
+                #The current 'redshift' is not an entry in the reference list of redshifts! 
+                warnings.warn(
+                    f"current redshift is not in the set of reference redshifts! {redshift}")
+                #print("Index returned same value for both hi and lo!")
+                #print(self.redshifts)
+                #print(redshift)
+
+
+                #Define the lower index
+                idx_lo = np.maximum(idx_lo - 100, 0)
+                #Define the upper index
+                idx_hi = np.minimum(idx_hi + 100, len(self.redshifts) - 1)
+                #print(self.redshifts[idx_lo:idx_hi])
+                #Define the new discrete redshift 
+                new_z = self.redshifts[idx_lo:idx_hi][np.argmin(np.abs(self.redshifts[idx_lo:idx_hi]-redshift))]  # nearest neighbour in feature space
+                #Assume redshift axis is discrete and use all matching values 
+                #Left returns the lowest index of all matching values 
+                idx_lo = np.searchsorted(self.redshifts, new_z,side='left')
+                #Right returns the highest index of all matching values 
+                idx_hi = np.searchsorted(self.redshifts, new_z,side='right')
+                if idx_lo == idx_hi: 
+                    raise ValueError(f"Cannot make list of reference redshifts from target redshift")
+                    
+        else: 
+            #Split the n by 2
+            d_idx //= 2
+            # find the appropriate range of indices in the sorted redshift array
+            # around the target redshift
+            idx = np.searchsorted(self.redshifts, redshift)
+            #Define the lower index
+            idx_lo = np.maximum(idx - d_idx, 0)
+            #Define the upper index
+            idx_hi = np.minimum(idx + d_idx, len(self.redshifts) - 1)
         return slice(idx_lo, idx_hi)
 
     def _single_match(
@@ -136,7 +177,7 @@ class DataMatcher:
         # select the nearest objects in the mock data and its features used for
         # matching to the data
         window = self.redshift_window(redshift, d_idx)
-        z_range = self.redshifts[window.stop] - self.redshifts[window.start]
+        z_range = self.redshifts[window.stop-1] - self.redshifts[window.start]
         if z_range > self.z_warn:
             warnings.warn(
                 f"redshift range of window exceeds dz={z_range:.3f}")
@@ -151,9 +192,17 @@ class DataMatcher:
         else:
             mask = ...  # selects every entry
             n_candidates = len(mock_features)
+            if n_candidates == 0:
+                raise ValueError(f"no entries in the simulation that match the data redshift?")
+
 
         # find nearest unmasked mock entry
         data_dist = euclidean_distance(data_features, mock_features[mask])
+        #print(data_features)
+        #print(mock_features)
+        #print(mock_features[mask])
+        #print(data_dist)
+
         idx = np.argmin(data_dist)  # nearest neighbour in feature space
         match_idx = window.start + idx
 
@@ -226,9 +275,11 @@ class DataMatcher:
 
         # initialise the statistics columns
         match_stats = pd.DataFrame(index=data.data.index)
+        matchcols_tmp = ["idx_match", "match_dist", "n_neigh", "z_range"]
+        matchdtype_tmp = [int, float, int, float]
         coliter = zip(
-            ["idx_match", "match_dist", "n_neigh", "z_range"],
-            [int, float, int, float])
+            matchcols_tmp,
+            matchdtype_tmp)
         for name, dtype in coliter:
             match_stats[name] = np.empty(len(data), dtype)
 
@@ -263,9 +314,31 @@ class DataMatcher:
                 if col in mockcols},
             inplace=True)
 
+        mockcols.rename(
+            columns={
+                col: f"{col}_mock" for col in mockcols.columns
+                if col in match_stats},
+            inplace=True)
+        mockcols.rename(
+            columns={
+                col: f"{col}_mock" for col in mockcols.columns
+                if col in datacols.columns},
+            inplace=True)
+        datacols.rename(
+            columns={
+                col: f"{col}_data" for col in datacols.columns
+                if col in match_stats},
+            inplace=True)
+        datacols.rename(
+            columns={
+                col: f"{col}_data" for col in datacols.columns
+                if col in mockcols},
+            inplace=True)
         # construct the matched output catalogue
         result = self.mock.template()  # copy all column attributes
         result.data = pd.concat([mockcols, match_stats, datacols], axis=1)
+        print(result.data)
+        print(result.data.keys())
 
         # store quantiles of the feature distributions for comparison
         quantiles = Quantiles(

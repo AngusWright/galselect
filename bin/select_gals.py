@@ -89,8 +89,19 @@ if __name__ == "__main__":
 
     # load the data
     print(f"reading data sample: {args.data}")
+    base=apd.read_fits(args.data)
+    if z_name_data not in base.keys(): 
+        print(f"z name {z_name_data} not found in extension 1: trying extension 2")
+        #Try the next extension 
+        base=apd.read_fits(args.data,hdu=2)
+        if z_name_data not in base.keys(): 
+            print(f"z name {z_name_data} not found in extension 2: trying extension 3")
+            #Try the next extension 
+            base=apd.read_fits(args.data,hdu=3)
+            if z_name_data not in base.keys(): 
+                raise Exception(f"z name {z_name_data} was not found in any of the first 3 data file extensions!")
     data = galselect.MatchingCatalogue(
-        apd.read_fits(args.data),
+        base, 
         redshift=z_name_data,
         feature_expressions=feature_expr_data)
     if args.weights is not None:
